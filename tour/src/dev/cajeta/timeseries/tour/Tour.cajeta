@@ -1,7 +1,17 @@
 package dev.cajeta.timeseries.tour;
 
 import cajeta.math.Tensor;
+import dev.cajeta.timeseries.Adf;
+import dev.cajeta.timeseries.AdfResult;
+import dev.cajeta.timeseries.Backtest;
+import dev.cajeta.timeseries.BacktestResult;
+import dev.cajeta.timeseries.Decompose;
+import dev.cajeta.timeseries.Decomposition;
+import dev.cajeta.timeseries.Diagnostics;
+import dev.cajeta.timeseries.MovingAverageForecaster;
 import dev.cajeta.timeseries.Series;
+import dev.cajeta.timeseries.Split;
+import dev.cajeta.timeseries.TrainTest;
 
 /**
  * The self-checking tour of dev.cajeta.timeseries. Every passage
@@ -37,10 +47,87 @@ public final class Tour {
         return;
     }
 
+    /** Passage 2 — decomposition recombines to the original. */
+    static void decomposePassage() {
+        System.stdout.println("passage: seasonal decomposition");
+        int64 n = 36;
+        float64[] a = heap float64[n];
+        int64 i = 0;
+        while (i < n) {
+            float64 t = (float64) i;
+            float64 season = 0.0;
+            int64 phase = i % 12;
+            if (phase < 6) { season = (float64) phase; }
+            else { season = (float64) (11 - phase); }
+            a[i] = 5.0 + 0.1 * t + season;
+            i = i + 1;
+        }
+        int64[] sh = heap int64[1]; sh[0] = n;
+        Series s = Series.of(Tensor.of<float64>(a, sh));
+        Decomposition d = Decompose.additive(s, (int64) 12);
+        boolean ok = true;
+        i = 0;
+        while (i < n) {
+            if (!d.trend.isMissing(i)) {
+                float64 back = d.trend.get(i) + d.seasonal.get(i) + d.resid.get(i);
+                float64 diff = back - s.get(i);
+                if (diff < 0.0) { diff = -diff; }
+                if (diff > 0.000000001) { ok = false; }
+            }
+            i = i + 1;
+        }
+        Tour.check(ok, "trend + seasonal + resid recombine to the observed");
+        Tour.check(d.trend.isMissing((int64) 0),
+            "the centred-MA endpoints are MISSING, not silently trimmed");
+        return;
+    }
+
+    /** Passage 3 — stationarity verdicts read the right way round. */
+    static void stationarityPassage() {
+        System.stdout.println("passage: ADF vs KPSS");
+        Series rw = Diagnostics.randomWalk((uint64) 5, (int64) 250);
+        AdfResult a = Adf.test(rw);
+        Tour.check(!a.isStationary(0.05),
+            "a random walk keeps its unit root (ADF fails to reject)");
+        Series d = rw.diff();
+        AdfResult a2 = Adf.test(d);
+        Tour.check(a2.isStationary(0.05),
+            "one difference of a random walk is stationary");
+        Tour.check(a.nullHypothesis().contains("UNIT ROOT"),
+            "the ADF null is spelled out at the call site");
+        return;
+    }
+
+    /** Passage 4 — evaluation cannot look ahead. */
+    static void evaluationPassage() {
+        System.stdout.println("passage: chronological evaluation");
+        int64 n = 60;
+        float64[] a = heap float64[n];
+        int64 i = 0;
+        while (i < n) {
+            a[i] = 3.0 + 0.5 * (float64) (i % 4);
+            i = i + 1;
+        }
+        int64[] sh = heap int64[1]; sh[0] = n;
+        Series s = Series.of(Tensor.of<float64>(a, sh));
+        TrainTest tt = Split.chronological(s, 0.2);
+        Tour.check(tt.train.indexAt(tt.train.count() - 1)
+            < tt.test.indexAt((int64) 0),
+            "the only split is chronological: train strictly precedes test");
+        MovingAverageForecaster f = heap MovingAverageForecaster((int64) 4);
+        BacktestResult r = Backtest.run(f, s, (int64) 40, (int64) 1);
+        Tour.check(r.rmse() < 1.0,
+            "rolling-origin backtest scores the baseline honestly");
+        return;
+    }
+
     public static int32 main() {
         Tour.failures = 0;
         System.stdout.println("== dev.cajeta.timeseries tour ==");
         Tour.seriesPassage();
+        Tour.decomposePassage();
+        Tour.stationarityPassage();
+        Tour.evaluationPassage();
         if (Tour.failures > 0) {
             System.stdout.println("TOUR FAILED: " + Tour.failures + " check(s)");
             return 1;

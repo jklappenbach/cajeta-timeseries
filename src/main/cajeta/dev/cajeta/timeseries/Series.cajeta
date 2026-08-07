@@ -235,6 +235,38 @@ public final class Series {
     }
 
     /**
+     * The SSA/mSSA trajectory (Hankel) matrix with window `L` (roadmap
+     * §5.3 — the transform `ml-recsys`'s mSSA unit consumes): shape
+     * `(L, K)` with `K = n − L + 1`, column `j` the window
+     * `[y(j), .., y(j+L−1)]`. Missing values are rejected, like
+     * {@link #lagMatrix}.
+     */
+    public #Tensor<float64> trajectoryMatrix(int64 window) {
+        if (window < 2 || window > this.n) {
+            throw heap TsException("Series.trajectoryMatrix: window must "
+                + "be in [2, n] (window = " + window + ", n = " + this.n
+                + ")");
+        }
+        if (this.hasMissing()) {
+            throw heap TsException("Series.trajectoryMatrix: the series "
+                + "has " + this.missingCount() + " missing value(s)");
+        }
+        int64 kk = this.n - window + 1;
+        float64[] m = heap float64[window * kk];
+        int64 i = 0;
+        while (i < window) {
+            int64 j = 0;
+            while (j < kk) {
+                m[i * kk + j] = this.v[j + i];
+                j = j + 1;
+            }
+            i = i + 1;
+        }
+        int64[] sh = heap int64[2]; sh[0] = window; sh[1] = kk;
+        return Tensor.of<float64>(m, sh);
+    }
+
+    /**
      * Drop missing values — POLICY: only leading and trailing runs of
      * missing can be dropped, because the index of the result must stay
      * regular. Interior missing is rejected with the offending position

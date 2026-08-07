@@ -159,6 +159,25 @@ public class SeriesTest {
         return;
     }
 
+    // Release seam (plan 9.3.2) — the SSA trajectory (Hankel) matrix
+    // ml-recsys's mSSA unit consumes: (L, K) with column j the window
+    // starting at j.
+    @Test
+    public void trajectoryMatrixIsHankel() {
+        Series s = Series.of(SeriesTest.vals5());
+        Tensor<float64> m = s.trajectoryMatrix((int64) 3);
+        Assert.equals(m.shapeAt(0), (int64) 3);
+        Assert.equals(m.shapeAt(1), (int64) 3);
+        // Column 0: [1,2,3]; column 2: [3,4,5]; anti-diagonals constant.
+        Assert.isTrue(m.flatGet((int64) 0) == 1.0);
+        Assert.isTrue(m.flatGet((int64) 3) == 2.0);
+        Assert.isTrue(m.flatGet((int64) 2) == 3.0);
+        Assert.isTrue(m.flatGet((int64) 4) == 3.0);
+        Assert.isTrue(m.flatGet((int64) 6) == 3.0);
+        Assert.isTrue(m.flatGet((int64) 8) == 5.0);
+        return;
+    }
+
     // 1.1.1 (frame half) + 1.1.5 — a Series is constructible FROM a frame
     // column without the frame becoming a dependency of the numerics
     // (§10.3), and a round trip through the frame preserves values and
