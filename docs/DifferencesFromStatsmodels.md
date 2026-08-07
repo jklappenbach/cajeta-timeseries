@@ -38,3 +38,21 @@ they are made. An empty section means "verbatim parity so far".
   `cajeta.math.stats` lacks `gammainc`/`chi2Cdf` and an inverse normal
   CDF; both are implemented package-private (Ljung-Box p-values,
   confidence bands) and are registered as stdlib gaps.
+
+## The ARIMA family (spec §8)
+
+- **AutoReg is exact parity** (1e-8): same OLS, same MLE standard
+  errors (σ² = SSR/n), same llf/AIC/BIC/HQIC definitions, same 1-based
+  time-trend column.
+- **MA/ARMA/ARIMA agree to optimizer tolerance, not bit-exactness.**
+  Both sides maximize the same exact Kalman-filter Gaussian likelihood
+  with the same Monahan stationarity/invertibility transform, but
+  statsmodels drives it with scipy's L-BFGS and cajeta with
+  `cajeta.math.optim`'s Nelder-Mead from a Hannan-Rissanen start —
+  different optimizers stop at slightly different points on the same
+  surface. Fixtures pin coefficients to 5e-3 and log-likelihood to
+  1e-2; truth-recovery assertions (the oracle-independent check) guard
+  the rest.
+- **`Arima`'s trend surface is `"n"`/`"c"`** (const = the process mean
+  μ, statsmodels' regression-with-ARMA-errors reading); `"ct"` on the
+  ARMA family has no consumer yet and is deferred.

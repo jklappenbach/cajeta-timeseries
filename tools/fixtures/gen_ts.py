@@ -212,12 +212,76 @@ def gen_correlograms():
     assert all(abs(a[k]) < half[k] for k in (3, 4, 5, 6)), a
 
 
+def gen_arima_family():
+    """U7/U8 — AutoReg by OLS (exact parity) and the MA/ARMA/ARIMA MLE
+    family (spec §8), plus the forecast fixtures U8 pins (§9).
+
+    AutoReg result vectors: [params..., bse..., llf, aic, bic, hqic,
+    nobs]. ARIMA-family vectors: [params..., llf, aic, bic] (params in
+    statsmodels order; sigma2 last). Forecasts: mean and 95% conf_int.
+    """
+    import warnings
+    from statsmodels.tsa.ar_model import AutoReg
+    from statsmodels.tsa.arima.model import ARIMA
+
+    ar2 = np.load(f"{OUT}/ts_ident_ar2.npy")
+    ma2 = np.load(f"{OUT}/ts_ident_ma2.npy")
+
+    def save_ar(name, res):
+        save(name, np.concatenate([
+            res.params, res.bse,
+            [res.llf, res.aic, res.bic, res.hqic, float(res.nobs)]]))
+
+    r = AutoReg(ar2, lags=2, trend="c").fit()
+    save_ar("ts_ar_ar2_c", r)
+    f = r.get_prediction(start=len(ar2), end=len(ar2) + 4)
+    save("ts_ar_ar2_c_fc", f.predicted_mean)
+    save("ts_ar_ar2_c_fc_ci", f.conf_int(alpha=0.05))
+
+    save_ar("ts_ar_ar2_n", AutoReg(ar2, lags=2, trend="n").fit())
+    save_ar("ts_ar_ar2_ct", AutoReg(ar2, lags=2, trend="ct").fit())
+    save_ar("ts_ar_ar2_lags14", AutoReg(ar2, lags=[1, 4], trend="c").fit())
+
+    def save_arima(name, res, h=None):
+        save(name, np.concatenate([
+            res.params, [res.llf, res.aic, res.bic]]))
+        if h:
+            g = res.get_forecast(steps=h)
+            save(name + "_fc", g.predicted_mean)
+            save(name + "_fc_ci", g.conf_int(alpha=0.05))
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        save_arima("ts_arima_ma2", ARIMA(ma2, order=(0, 0, 2),
+                                         trend="n").fit(), h=10)
+
+        n = 1000
+        rng = np.random.default_rng(41)
+        e = rng.normal(0.0, 1.0, n + 1)
+        arma11 = np.zeros(n + 1)
+        for i in range(1, n + 1):
+            arma11[i] = 0.5 * arma11[i - 1] + e[i] + 0.3 * e[i - 1]
+        arma11 = arma11[1:]
+        save("ts_arma11", arma11)
+        save_arima("ts_arima_arma11", ARIMA(arma11, order=(1, 0, 1),
+                                            trend="n").fit(), h=10)
+
+        integ = 50.0 + np.cumsum(arma11)
+        save("ts_arima111_series", integ)
+        save_arima("ts_arima_111", ARIMA(integ, order=(1, 1, 1),
+                                         trend="n").fit(), h=10)
+
+        save_arima("ts_arima_ar2c", ARIMA(ar2, order=(2, 0, 0),
+                                          trend="c").fit())
+
+
 def main():
     print(f"statsmodels {statsmodels.__version__} fixtures -> {OUT}")
     gen_decompose()
     gen_stationarity()
     gen_diagnostics()
     gen_correlograms()
+    gen_arima_family()
 
 
 if __name__ == "__main__":

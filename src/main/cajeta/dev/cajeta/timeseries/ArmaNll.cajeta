@@ -1,0 +1,281 @@
+package dev.cajeta.timeseries;
+
+import cajeta.math.Tensor;
+import cajeta.math.linalg.LinAlg;
+import cajeta.math.optim.Objective;
+
+/**
+ * The exact Gaussian ARMA(p,q) negative log-likelihood, σ² concentrated
+ * out, evaluated by the Kalman filter on the Harvey state-space form
+ * (state dim `m = max(p, q+1)`, stationary initialization by solving
+ * the discrete Lyapunov equation). Parameters arrive UNCONSTRAINED and
+ * are mapped into the stationary/invertible region by the Monahan
+ * partial-autocorrelation transform — statsmodels' own enforcement
+ * route (spec §8.7), so the optimizer can roam freely.
+ *
+ * Layout of the parameter vector: `[μ (if trend "c"), x_φ(p), x_θ(q)]`.
+ * PACKAGE-PRIVATE: {@link Arima} is the surface.
+ */
+final class ArmaNll implements Objective {
+
+    float64[] z;
+    int64 n;
+    int64 p;
+    int64 q;
+    boolean withMean;
+
+    ArmaNll(#float64[] z, int64 p, int64 q, boolean withMean) {
+        this.z #= z;
+        this.n = (int64) this.z.count();
+        this.p = p;
+        this.q = q;
+        this.withMean = withMean;
+        return;
+    }
+
+    /** Monahan: unconstrained x → stationary AR coefficients. */
+    static #float64[] constrain(float64[] x, int64 off, int64 k) {
+        float64[] a = heap float64[k];
+        float64[] tmp = heap float64[k];
+        int64 i = 0;
+        while (i < k) {
+            float64 v = x[off + i];
+            float64 r = v / Math.sqrt(1.0 + v * v);
+            int64 j = 0;
+            while (j < i) {
+                tmp[j] = a[j] - r * a[i - 1 - j];
+                j = j + 1;
+            }
+            j = 0;
+            while (j < i) { a[j] = tmp[j]; j = j + 1; }
+            a[i] = r;
+            i = i + 1;
+        }
+        return #a;
+    }
+
+    /** Inverse Monahan: stationary AR coefficients → unconstrained x. */
+    static #float64[] unconstrain(float64[] a0, int64 k) {
+        float64[] a = heap float64[k];
+        float64[] prev = heap float64[k];
+        int64 i = 0;
+        while (i < k) { a[i] = a0[i]; i = i + 1; }
+        float64[] x = heap float64[k];
+        i = k - 1;
+        while (i >= 0) {
+            float64 r = a[i];
+            if (r > 0.98) { r = 0.98; }
+            if (r < -0.98) { r = -0.98; }
+            x[i] = r / Math.sqrt(1.0 - r * r);
+            int64 j = 0;
+            while (j < i) {
+                prev[j] = (a[j] + r * a[i - 1 - j]) / (1.0 - r * r);
+                j = j + 1;
+            }
+            j = 0;
+            while (j < i) {
+                float64 v = prev[j];
+                if (v > 0.98 && j == i - 1) { v = 0.98; }
+                a[j] = v;
+                j = j + 1;
+            }
+            i = i - 1;
+        }
+        return #x;
+    }
+
+    /** φ from the parameter vector. */
+    #float64[] phiOf(Tensor<float64> x) {
+        int64 off = 0;
+        if (this.withMean) { off = 1; }
+        float64[] raw = heap float64[this.p];
+        int64 i = 0;
+        while (i < this.p) { raw[i] = x.flatGet(off + i); i = i + 1; }
+        return ArmaNll.constrain(raw, (int64) 0, this.p);
+    }
+
+    /** θ from the parameter vector (invertible). */
+    #float64[] thetaOf(Tensor<float64> x) {
+        int64 off = this.p;
+        if (this.withMean) { off = off + 1; }
+        float64[] raw = heap float64[this.q];
+        int64 i = 0;
+        while (i < this.q) { raw[i] = x.flatGet(off + i); i = i + 1; }
+        float64[] c = ArmaNll.constrain(raw, (int64) 0, this.q);
+        // Invertibility of 1+θ₁B+… ⇔ stationarity of the −θ polynomial.
+        i = 0;
+        while (i < this.q) { c[i] = -c[i]; i = i + 1; }
+        return #c;
+    }
+
+    float64 muOf(Tensor<float64> x) {
+        if (this.withMean) { return x.flatGet((int64) 0); }
+        return 0.0;
+    }
+
+    /** σ̂² at the given parameters (the concentrated scale). */
+    float64 sigma2At(Tensor<float64> x) {
+        float64[] out = this.filter(x);
+        return out[1];
+    }
+
+    /** The FULL log-likelihood at the parameters (σ² at its MLE). */
+    float64 llfAt(Tensor<float64> x) {
+        float64[] out = this.filter(x);
+        return -out[0];
+    }
+
+    public float64 value(Tensor<float64> x) {
+        float64[] out = this.filter(x);
+        return out[0];
+    }
+
+    /** Returns `[NLL, σ̂²]` at the parameters. */
+    #float64[] filter(Tensor<float64> x) {
+        int64 p = this.p;
+        int64 q = this.q;
+        int64 m = p;
+        if (q + 1 > m) { m = q + 1; }
+        float64[] phi = this.phiOf(x);
+        float64[] th = this.thetaOf(x);
+        float64 mu = this.muOf(x);
+
+        // T (m×m): first column φ (padded), superdiagonal identity.
+        float64[] tm = heap float64[m * m];
+        int64 i = 0;
+        while (i < m) {
+            if (i < p) { tm[i * m] = phi[i]; }
+            if (i + 1 < m) { tm[i * m + i + 1] = 1.0; }
+            i = i + 1;
+        }
+        // R (m): [1, θ…] padded.
+        float64[] rv = heap float64[m];
+        rv[0] = 1.0;
+        i = 1;
+        while (i < m) {
+            if (i - 1 < q) { rv[i] = th[i - 1]; }
+            i = i + 1;
+        }
+        // Stationary P0: vec(P) = (I − T⊗T)⁻¹ vec(RR').
+        int64 mm = m * m;
+        float64[] am = heap float64[mm * mm];
+        float64[] bv = heap float64[mm];
+        int64 r1 = 0;
+        while (r1 < m) {
+            int64 c1 = 0;
+            while (c1 < m) {
+                int64 row = r1 * m + c1;
+                bv[row] = rv[r1] * rv[c1];
+                int64 r2 = 0;
+                while (r2 < m) {
+                    int64 c2 = 0;
+                    while (c2 < m) {
+                        float64 v = -tm[r1 * m + r2] * tm[c1 * m + c2];
+                        if (r1 * m + c1 == r2 * m + c2) { v = v + 1.0; }
+                        // guard identity add: row==col index below
+                        am[row * mm + r2 * m + c2] = v;
+                        c2 = c2 + 1;
+                    }
+                    r2 = r2 + 1;
+                }
+                c1 = c1 + 1;
+            }
+            r1 = r1 + 1;
+        }
+        int64[] ash = heap int64[2]; ash[0] = mm; ash[1] = mm;
+        int64[] bsh = heap int64[1]; bsh[0] = mm;
+        Tensor<float64> pv = LinAlg.solve<float64>(
+            Tensor.of<float64>(am, ash), Tensor.of<float64>(bv, bsh));
+        float64[] pm = heap float64[mm];
+        i = 0;
+        while (i < mm) { pm[i] = pv.flatGet(i); i = i + 1; }
+
+        // Kalman filter with σ² = 1; concentrate the scale afterwards.
+        float64[] a = heap float64[m];
+        float64 sumLogF = 0.0;
+        float64 sumV2F = 0.0;
+        int64 t = 0;
+        while (t < this.n) {
+            float64 v = (this.z[t] - mu) - a[0];
+            float64 f = pm[0];
+            if (f <= 0.0 || f != f) {
+                float64[] bad = heap float64[2];
+                bad[0] = 1.0 / 0.0;
+                bad[1] = 1.0;
+                return #bad;
+            }
+            sumLogF = sumLogF + Math.log(f);
+            sumV2F = sumV2F + v * v / f;
+            // a' = T(a + P[:,0]·v/F)
+            float64[] au = heap float64[m];
+            i = 0;
+            while (i < m) {
+                au[i] = a[i] + pm[i * m] * v / f;
+                i = i + 1;
+            }
+            i = 0;
+            while (i < m) {
+                float64 acc = 0.0;
+                int64 j = 0;
+                while (j < m) {
+                    acc = acc + tm[i * m + j] * au[j];
+                    j = j + 1;
+                }
+                a[i] = acc;
+                i = i + 1;
+            }
+            // P' = T(P − P[:,0]P[0,:]/F)T' + RR'
+            float64[] pu = heap float64[mm];
+            i = 0;
+            while (i < m) {
+                int64 j = 0;
+                while (j < m) {
+                    pu[i * m + j] = pm[i * m + j]
+                        - pm[i * m] * pm[j * m] / f;
+                    j = j + 1;
+                }
+                i = i + 1;
+            }
+            float64[] tp = heap float64[mm];
+            i = 0;
+            while (i < m) {
+                int64 j = 0;
+                while (j < m) {
+                    float64 acc = 0.0;
+                    int64 k = 0;
+                    while (k < m) {
+                        acc = acc + tm[i * m + k] * pu[k * m + j];
+                        k = k + 1;
+                    }
+                    tp[i * m + j] = acc;
+                    j = j + 1;
+                }
+                i = i + 1;
+            }
+            i = 0;
+            while (i < m) {
+                int64 j = 0;
+                while (j < m) {
+                    float64 acc = 0.0;
+                    int64 k = 0;
+                    while (k < m) {
+                        acc = acc + tp[i * m + k] * tm[j * m + k];
+                        k = k + 1;
+                    }
+                    pm[i * m + j] = acc + rv[i] * rv[j];
+                    j = j + 1;
+                }
+                i = i + 1;
+            }
+            t = t + 1;
+        }
+        float64 nn = (float64) this.n;
+        float64 s2 = sumV2F / nn;
+        float64 nll = 0.5 * nn * (Math.log(2.0 * 3.141592653589793) + 1.0
+            + Math.log(s2)) + 0.5 * sumLogF;
+        float64[] out = heap float64[2];
+        out[0] = nll;
+        out[1] = s2;
+        return #out;
+    }
+}

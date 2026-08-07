@@ -1,0 +1,31 @@
+package dev.cajeta.timeseries;
+
+/**
+ * A forecast with its prediction interval (spec §9.1–§9.2): `h` steps in
+ * the ORIGINAL scale of the series, the interval at the stated
+ * confidence level, widening with the horizon. All three series share
+ * the index that continues the fitted series.
+ */
+public final class ForecastResult {
+
+    /** The point forecasts. */
+    public Series mean;
+
+    /** The lower interval bound. */
+    public Series lower;
+
+    /** The upper interval bound. */
+    public Series upper;
+
+    /** The significance level (interval coverage is `1 − alpha`). */
+    public float64 alpha;
+
+    ForecastResult(#Series mean, #Series lower, #Series upper,
+                   float64 alpha) {
+        this.mean #= mean;
+        this.lower #= lower;
+        this.upper #= upper;
+        this.alpha = alpha;
+        return;
+    }
+}

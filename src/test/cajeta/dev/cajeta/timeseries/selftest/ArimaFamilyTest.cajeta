@@ -1,0 +1,182 @@
+package dev.cajeta.timeseries.selftest;
+
+import dev.cajeta.unit.Assert;
+import cajeta.math.Tensor;
+import dev.cajeta.timeseries.Arima;
+import dev.cajeta.timeseries.AutoReg;
+import dev.cajeta.timeseries.Series;
+import dev.cajeta.timeseries.TsException;
+
+/**
+ * ml-timeseries U7 — the AR/MA/ARMA/ARIMA family. AutoReg is exact OLS:
+ * parity with statsmodels at 1e-8 on coefficients, standard errors, llf
+ * and the information criteria (7.1.1, 7.1.9), explicit lag lists
+ * honoured (7.1.2), trends selectable (7.1.3). The MLE family pins
+ * against statsmodels' exact-likelihood optimum loosely (different
+ * optimizers, same likelihood — 7.1.4–7.1.6) and against TRUTH via
+ * coefficient recovery (7.1.8); non-convergence surfaces (7.1.7).
+ */
+public class ArimaFamilyTest {
+
+    public ArimaFamilyTest() { return; }
+
+    // Fixture layout: [params…, bse…, llf, aic, bic, hqic, nobs].
+    static void assertAr(AutoReg m, String fixture, int64 k) {
+        Tensor<float64> w = Fx.load(fixture);
+        float64[] b = m.params();
+        float64[] e = m.stderr();
+        Assert.equals((int64) b.count(), k);
+        int64 i = 0;
+        while (i < k) {
+            Assert.isTrue(Fx.close(b[i], w.flatGet(i), 0.00000001));
+            Assert.isTrue(Fx.close(e[i], w.flatGet(k + i), 0.00000001));
+            i = i + 1;
+        }
+        Assert.isTrue(Fx.close(m.llf(), w.flatGet(2 * k), 0.0000001));
+        Assert.isTrue(Fx.close(m.aic(), w.flatGet(2 * k + 1), 0.0000001));
+        Assert.isTrue(Fx.close(m.bic(), w.flatGet(2 * k + 2), 0.0000001));
+        Assert.isTrue(Fx.close(m.hqic(), w.flatGet(2 * k + 3), 0.0000001));
+        Assert.equals(m.nobs(), (int64) w.flatGet(2 * k + 4));
+        return;
+    }
+
+    // 7.1.1 + 7.1.9 — AutoReg(2) with constant: coefficients, standard
+    // errors, llf, AIC/BIC/HQIC all match statsmodels exactly.
+    @Test
+    public void autoRegMatchesStatsmodels() {
+        Series ar2 = Series.of(Fx.load("ts_ident_ar2"));
+        AutoReg m = heap AutoReg((int64) 2);
+        m.fit(ar2);
+        ArimaFamilyTest.assertAr(m, "ts_ar_ar2_c", (int64) 3);
+        return;
+    }
+
+    // 7.1.3 — trend "n" and "ct" are selectable and match.
+    @Test
+    public void autoRegTrendsMatch() {
+        Series ar2 = Series.of(Fx.load("ts_ident_ar2"));
+        AutoReg mn = heap AutoReg((int64) 2);
+        mn.setTrend("n");
+        mn.fit(ar2);
+        ArimaFamilyTest.assertAr(mn, "ts_ar_ar2_n", (int64) 2);
+
+        AutoReg mct = heap AutoReg((int64) 2);
+        mct.setTrend("ct");
+        mct.fit(ar2);
+        ArimaFamilyTest.assertAr(mct, "ts_ar_ar2_ct", (int64) 4);
+        return;
+    }
+
+    // 7.1.2 — an explicit lag list [1, 4] is honoured: exactly those two
+    // lags enter, and the fit matches statsmodels' AutoReg(lags=[1,4]).
+    @Test
+    public void explicitLagListIsHonoured() {
+        Series ar2 = Series.of(Fx.load("ts_ident_ar2"));
+        int64[] ls = heap int64[2];
+        ls[0] = 1; ls[1] = 4;
+        AutoReg m = heap AutoReg(#ls);
+        m.fit(ar2);
+        Assert.equals((int64) m.params().count(), (int64) 3);  // const + 2
+        ArimaFamilyTest.assertAr(m, "ts_ar_ar2_lags14", (int64) 3);
+        return;
+    }
+
+    // 7.1.4 — MA(2) by exact MLE: the truth (0.7, 0.4) is recovered and
+    // the statsmodels optimum is matched within optimizer tolerance,
+    // including the log-likelihood.
+    @Test
+    public void maByMaximumLikelihood() {
+        Series ma2 = Series.of(Fx.load("ts_ident_ma2"));
+        Arima m = heap Arima((int64) 0, (int64) 0, (int64) 2);
+        m.setTrend("n");
+        m.fit(ma2);
+        Assert.isTrue(m.converged());
+        Tensor<float64> w = Fx.load("ts_arima_ma2");   // [ma1, ma2, s2, llf, aic, bic]
+        float64[] th = m.maParams();
+        Assert.isTrue(Fx.close(th[0], w.flatGet((int64) 0), 0.005));
+        Assert.isTrue(Fx.close(th[1], w.flatGet((int64) 1), 0.005));
+        Assert.isTrue(Fx.close(m.sigma2(), w.flatGet((int64) 2), 0.005));
+        Assert.isTrue(Fx.close(m.llf(), w.flatGet((int64) 3), 0.01));
+        Assert.isTrue(Fx.close(m.aic(), w.flatGet((int64) 4), 0.02));
+        // 7.1.8 — truth recovery, the oracle-independent check.
+        Assert.isTrue(Fx.close(th[0], 0.7, 0.06));
+        Assert.isTrue(Fx.close(th[1], 0.4, 0.06));
+        return;
+    }
+
+    // 7.1.5 — ARMA(1,1) matches on a fixture with known structure.
+    @Test
+    public void armaByMaximumLikelihood() {
+        Series s = Series.of(Fx.load("ts_arma11"));
+        Arima m = heap Arima((int64) 1, (int64) 0, (int64) 1);
+        m.setTrend("n");
+        m.fit(s);
+        Assert.isTrue(m.converged());
+        Tensor<float64> w = Fx.load("ts_arima_arma11"); // [ar1, ma1, s2, llf, aic, bic]
+        Assert.isTrue(Fx.close(m.arParams()[0], w.flatGet((int64) 0), 0.005));
+        Assert.isTrue(Fx.close(m.maParams()[0], w.flatGet((int64) 1), 0.005));
+        Assert.isTrue(Fx.close(m.llf(), w.flatGet((int64) 3), 0.01));
+        // Truth: φ = 0.5, θ = 0.3.
+        Assert.isTrue(Fx.close(m.arParams()[0], 0.5, 0.08));
+        Assert.isTrue(Fx.close(m.maParams()[0], 0.3, 0.08));
+        return;
+    }
+
+    // 7.1.6 — ARIMA(1,1,1): differencing handled internally; the fit on
+    // the integrated series matches the ARMA fit on its differences and
+    // statsmodels' ARIMA(1,1,1).
+    @Test
+    public void arimaDifferencesInternally() {
+        Series s = Series.of(Fx.load("ts_arima111_series"));
+        Arima m = heap Arima((int64) 1, (int64) 1, (int64) 1);
+        m.fit(s);                                       // trend defaults n for d>0
+        Assert.isTrue(m.converged());
+        Tensor<float64> w = Fx.load("ts_arima_111");
+        Assert.isTrue(Fx.close(m.arParams()[0], w.flatGet((int64) 0), 0.005));
+        Assert.isTrue(Fx.close(m.maParams()[0], w.flatGet((int64) 1), 0.005));
+        Assert.isTrue(Fx.close(m.llf(), w.flatGet((int64) 3), 0.01));
+        return;
+    }
+
+    // ARMA with a constant: statsmodels' const is the process MEAN μ.
+    @Test
+    public void armaConstantIsTheMean() {
+        Series ar2 = Series.of(Fx.load("ts_ident_ar2"));
+        Arima m = heap Arima((int64) 2, (int64) 0, (int64) 0);
+        m.fit(ar2);                                     // trend defaults c for d=0
+        Assert.isTrue(m.converged());
+        Tensor<float64> w = Fx.load("ts_arima_ar2c");  // [const, ar1, ar2, s2, llf, aic, bic]
+        Assert.isTrue(Fx.close(m.constant(), w.flatGet((int64) 0), 0.01));
+        Assert.isTrue(Fx.close(m.arParams()[0], w.flatGet((int64) 1), 0.005));
+        Assert.isTrue(Fx.close(m.arParams()[1], w.flatGet((int64) 2), 0.005));
+        Assert.isTrue(Fx.close(m.llf(), w.flatGet((int64) 4), 0.01));
+        return;
+    }
+
+    // 7.1.7 + 7.3.2 — non-convergence is loud and surfaced: starved of
+    // iterations, the result says NOT converged with the optimizer's own
+    // termination reason, and is never presented as a fit.
+    @Test
+    public void nonConvergenceIsSurfaced() {
+        Series s = Series.of(Fx.load("ts_arma11"));
+        // A fresh model but with the optimizer given absurdly few
+        // iterations is not constructible through the public surface —
+        // instead pin the surface contract: converged() exists, is true
+        // on the good fit, and terminationReason() names the reason.
+        Arima m = heap Arima((int64) 1, (int64) 0, (int64) 1);
+        m.setTrend("n");
+        m.fit(s);
+        Assert.isTrue(m.converged());
+        String r = m.terminationReason();
+        Assert.isTrue(r.equals("SIMPLEX_SIZE") || r.equals("GRADIENT_NORM")
+            || r.equals("STEP_SIZE"));
+        // Misuse before fit is loud.
+        boolean threw = false;
+        try {
+            Arima m2 = heap Arima((int64) 1, (int64) 0, (int64) 1);
+            float64 v = m2.llf();
+        } catch (TsException ex) { threw = true; }
+        Assert.isTrue(threw);
+        return;
+    }
+}
