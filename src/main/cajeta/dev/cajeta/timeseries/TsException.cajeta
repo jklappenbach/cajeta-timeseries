@@ -1,0 +1,17 @@
+package dev.cajeta.timeseries;
+
+import cajeta.error.RecoverableException;
+import cajeta.lang.String;
+
+/**
+ * Thrown on series misuse a caller can act on: mismatched or irregular
+ * time indexes, invalid windows or periods, forecast-before-fit, and
+ * every rejected missing-value policy. Recoverable, mirroring
+ * `dev.cajeta.ml.MlException` and the stdlib's `LinAlgException`.
+ */
+public class TsException extends RecoverableException {
+    public TsException(String message) {
+        this.message = message;
+        this.cause = 0;
+    }
+}

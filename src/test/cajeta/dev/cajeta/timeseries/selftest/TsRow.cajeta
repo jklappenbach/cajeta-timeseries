@@ -1,0 +1,12 @@
+package dev.cajeta.timeseries.selftest;
+
+/**
+ * The SeriesTest frame schema — an int64 time index plus a float64
+ * measurement, the natural shape of a time-indexed frame column. In its
+ * own file because cross-file records are the user shape `Table<R>`
+ * materialization must handle (the cajeta-ml `Obs` convention).
+ */
+public record TsRow {
+    int64 t;
+    float64 y;
+}

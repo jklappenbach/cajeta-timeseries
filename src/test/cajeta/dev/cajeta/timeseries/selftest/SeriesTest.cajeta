@@ -1,0 +1,221 @@
+package dev.cajeta.timeseries.selftest;
+
+import dev.cajeta.unit.Assert;
+import cajeta.math.Tensor;
+import cajeta.nucleo.column.Column;
+import cajeta.nucleo.frame.Table;
+import dev.cajeta.timeseries.Series;
+import dev.cajeta.timeseries.TsException;
+
+/**
+ * ml-timeseries U1 — the `Series` value type: construction from a tensor
+ * and from a frame column (spec §2.1, §10.3), lag alignment with explicit
+ * length accounting (§2.2, §2.3), the regular-interval contract (§1.5.4),
+ * explicit missing-value policy (§2.4), and a lossless round trip through
+ * `cajeta.nucleo.frame` (U1.1.5).
+ */
+public class SeriesTest {
+
+    public SeriesTest() { return; }
+
+    static #Tensor<float64> vals5() {
+        float64[] a = heap float64[5];
+        a[0] = 1.0; a[1] = 2.0; a[2] = 3.0; a[3] = 4.0; a[4] = 5.0;
+        int64[] sh = heap int64[1]; sh[0] = 5;
+        return Tensor.of<float64>(a, sh);
+    }
+
+    // 1.1.1 — constructible from a tensor, with and without an explicit
+    // index; a mismatched index length is rejected (§2.1).
+    @Test
+    public void constructionFromTensor() {
+        Series s = Series.of(SeriesTest.vals5());
+        Assert.equals(s.count(), (int64) 5);
+        Assert.isTrue(s.get((int64) 2) == 3.0);
+        // The implicit index is 0..n-1, step 1.
+        Assert.equals(s.indexAt((int64) 0), (int64) 0);
+        Assert.equals(s.indexAt((int64) 4), (int64) 4);
+        Assert.equals(s.indexStep(), (int64) 1);
+
+        int64[] idx = heap int64[5];
+        idx[0] = 10; idx[1] = 20; idx[2] = 30; idx[3] = 40; idx[4] = 50;
+        Series t = Series.of(SeriesTest.vals5(), idx);
+        Assert.equals(t.indexAt((int64) 0), (int64) 10);
+        Assert.equals(t.indexStep(), (int64) 10);
+
+        int64[] bad = heap int64[3];
+        bad[0] = 0; bad[1] = 1; bad[2] = 2;
+        boolean threw = false;
+        try {
+            Series u = Series.of(SeriesTest.vals5(), bad);
+        } catch (TsException ex) { threw = true; }
+        Assert.isTrue(threw);
+        return;
+    }
+
+    // 1.1.3 — a series is measurements at REGULAR intervals (§1.5.4):
+    // irregular and non-increasing indexes are rejected at construction,
+    // never silently mishandled downstream.
+    @Test
+    public void irregularIndexIsRejected() {
+        int64[] gap = heap int64[5];
+        gap[0] = 0; gap[1] = 1; gap[2] = 3; gap[3] = 4; gap[4] = 5;
+        boolean threw = false;
+        try {
+            Series s = Series.of(SeriesTest.vals5(), gap);
+        } catch (TsException ex) { threw = true; }
+        Assert.isTrue(threw);
+
+        int64[] rev = heap int64[5];
+        rev[0] = 50; rev[1] = 40; rev[2] = 30; rev[3] = 20; rev[4] = 10;
+        threw = false;
+        try {
+            Series s2 = Series.of(SeriesTest.vals5(), rev);
+        } catch (TsException ex) { threw = true; }
+        Assert.isTrue(threw);
+        return;
+    }
+
+    // 1.1.2 — lag(k) shifts by k, the first k positions become MISSING
+    // rather than zero-filled (§2.2), the index is unchanged, and the lag
+    // matrix accounts for its length change explicitly by dropping
+    // incomplete leading rows (§2.3).
+    @Test
+    public void lagAlignmentAndLagMatrix() {
+        Series s = Series.of(SeriesTest.vals5());
+        Series l2 = s.lag((int64) 2);
+        Assert.equals(l2.count(), (int64) 5);          // length is explicit: unchanged
+        Assert.isTrue(l2.isMissing((int64) 0));
+        Assert.isTrue(l2.isMissing((int64) 1));
+        Assert.isTrue(!l2.isMissing((int64) 2));
+        Assert.isTrue(l2.get((int64) 2) == 1.0);
+        Assert.isTrue(l2.get((int64) 4) == 3.0);
+        Assert.equals(l2.indexAt((int64) 4), (int64) 4); // index untouched
+        Assert.equals(l2.missingCount(), (int64) 2);
+
+        // lag(0) is the identity; a negative k is meaningless here.
+        Series l0 = s.lag((int64) 0);
+        Assert.isTrue(l0.get((int64) 0) == 1.0);
+        boolean threw = false;
+        try {
+            Series ln = s.lag((int64) -1);
+        } catch (TsException ex) { threw = true; }
+        Assert.isTrue(threw);
+
+        // Lag matrix over lags 1..p: shape (n-p, p), row t = [y(t-1)..y(t-p)]
+        // for t = p..n-1 — the design matrix §8's autoregressions consume.
+        Tensor<float64> m = s.lagMatrix((int64) 2);
+        Assert.equals(m.shapeAt(0), (int64) 3);
+        Assert.equals(m.shapeAt(1), (int64) 2);
+        Assert.isTrue(m.flatGet((int64) 0) == 2.0);    // t=2: y(1)
+        Assert.isTrue(m.flatGet((int64) 1) == 1.0);    // t=2: y(0)
+        Assert.isTrue(m.flatGet((int64) 4) == 4.0);    // t=4: y(3)
+        Assert.isTrue(m.flatGet((int64) 5) == 3.0);    // t=4: y(2)
+        return;
+    }
+
+    // 1.1.4 — missing values are explicit (IEEE NaN), counted, and every
+    // operation states its policy: dropMissing() drops a leading/trailing
+    // run and keeps the index regular, but REJECTS interior missing
+    // (dropping it would fabricate an irregular series); lagMatrix REJECTS
+    // missing outright (a design matrix with holes is not a design matrix).
+    @Test
+    public void missingValuePolicyIsExplicit() {
+        float64[] a = heap float64[5];
+        a[0] = 0.0 / 0.0;                              // NaN — missing
+        a[1] = 2.0; a[2] = 3.0; a[3] = 4.0; a[4] = 5.0;
+        int64[] sh = heap int64[1]; sh[0] = 5;
+        Series s = Series.of(Tensor.of<float64>(a, sh));
+        Assert.isTrue(s.hasMissing());
+        Assert.equals(s.missingCount(), (int64) 1);
+        Assert.isTrue(s.isMissing((int64) 0));
+        Assert.isTrue(!s.isMissing((int64) 1));
+
+        // Leading missing drops cleanly; the index stays regular.
+        Series d = s.dropMissing();
+        Assert.equals(d.count(), (int64) 4);
+        Assert.isTrue(d.get((int64) 0) == 2.0);
+        Assert.equals(d.indexAt((int64) 0), (int64) 1);
+        Assert.equals(d.indexStep(), (int64) 1);
+
+        // Interior missing cannot be dropped without faking regularity.
+        float64[] b = heap float64[5];
+        b[0] = 1.0; b[1] = 2.0;
+        b[2] = 0.0 / 0.0;
+        b[3] = 4.0; b[4] = 5.0;
+        Series si = Series.of(Tensor.of<float64>(b, sh));
+        boolean threw = false;
+        try {
+            Series di = si.dropMissing();
+        } catch (TsException ex) { threw = true; }
+        Assert.isTrue(threw);
+
+        // The lag matrix rejects missing outright.
+        threw = false;
+        try {
+            Tensor<float64> m = si.lagMatrix((int64) 2);
+        } catch (TsException ex) { threw = true; }
+        Assert.isTrue(threw);
+        return;
+    }
+
+    // 1.1.1 (frame half) + 1.1.5 — a Series is constructible FROM a frame
+    // column without the frame becoming a dependency of the numerics
+    // (§10.3), and a round trip through the frame preserves values and
+    // index exactly.
+    @Test
+    public void frameColumnConstructionAndRoundTrip() {
+        int64 n = 6;
+        int64[] tv = heap int64[n];
+        float64[] yv = heap float64[n];
+        int64 i = 0;
+        while (i < n) {
+            tv[i] = 100 + i * (int64) 5;
+            yv[i] = 0.5 * (float64) i * (float64) i - 3.0;
+            i = i + 1;
+        }
+        Table<TsRow> tab = heap Table<TsRow>(
+            Column.of<int64>(tv), Column.of<float64>(yv));
+
+        Series s = Series.fromTable<TsRow>(tab, "y", "t");
+        Assert.equals(s.count(), n);
+        Assert.equals(s.indexAt((int64) 0), (int64) 100);
+        Assert.equals(s.indexStep(), (int64) 5);
+        Assert.isTrue(s.get((int64) 3) == 0.5 * 9.0 - 3.0);
+
+        // Without an index column: the implicit 0..n-1 index.
+        Series s0 = Series.fromTable<TsRow>(tab, "y");
+        Assert.equals(s0.indexAt((int64) 5), (int64) 5);
+
+        // Unknown / wrongly-typed columns are loud.
+        boolean threw = false;
+        try {
+            Series bad = Series.fromTable<TsRow>(tab, "nope", "t");
+        } catch (TsException ex) { threw = true; }
+        Assert.isTrue(threw);
+        threw = false;
+        try {
+            Series bad2 = Series.fromTable<TsRow>(tab, "t", "y");
+        } catch (TsException ex) { threw = true; }
+        Assert.isTrue(threw);
+
+        // Round trip: Series -> arrays -> a fresh Table -> Series. Values
+        // and index survive bit-exactly.
+        int64[] t2 = s.index();
+        Tensor<float64> v2 = s.values();
+        float64[] y2 = heap float64[n];
+        i = 0;
+        while (i < n) { y2[i] = v2.flatGet(i); i = i + 1; }
+        Table<TsRow> tab2 = heap Table<TsRow>(
+            Column.of<int64>(t2), Column.of<float64>(y2));
+        Series s2 = Series.fromTable<TsRow>(tab2, "y", "t");
+        Assert.equals(s2.count(), s.count());
+        i = 0;
+        while (i < n) {
+            Assert.equals(Cajeta.f64ToBits(s2.get(i)), Cajeta.f64ToBits(s.get(i)));
+            Assert.equals(s2.indexAt(i), s.indexAt(i));
+            i = i + 1;
+        }
+        return;
+    }
+}

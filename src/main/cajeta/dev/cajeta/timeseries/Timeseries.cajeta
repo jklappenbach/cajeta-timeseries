@@ -1,0 +1,25 @@
+package dev.cajeta.timeseries;
+
+/**
+ * cajeta-timeseries — classical time-series analysis: the statsmodels role
+ * for the cajeta ecosystem. A `Series` value type with lag operators,
+ * trend/seasonal/residual decomposition, stationarity testing (ADF/KPSS)
+ * and differencing, white-noise and random-walk diagnostics, ACF/PACF with
+ * confidence bands, moving averages, and the AR/MA/ARMA/ARIMA family with
+ * forecasting.
+ *
+ * The parity oracle is **statsmodels 0.14.6** — not scikit-learn. The
+ * evaluation surface is deliberately narrow: chronological splitting and
+ * rolling-origin backtesting are the only paths offered, so no forecast
+ * API permits accidental lookahead (spec §11.5).
+ *
+ * This is the library entry class (the `--emit=cja` root). The surface
+ * lands unit by unit per the ml-timeseries plan.
+ */
+public final class Timeseries {
+    /** The library version. */
+    public static #String version() { return "0.1.0"; }
+
+    /** `--emit=cja` entry. */
+    public static int32 run() { return 0; }
+}

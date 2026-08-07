@@ -1,0 +1,314 @@
+package dev.cajeta.timeseries;
+
+import cajeta.math.Tensor;
+import cajeta.nucleo.frame.Table;
+
+/**
+ * A time series: measurements at **regular intervals** (spec §1.5.4) over
+ * `float64` values, with an `int64` time index held as `start + i·step`.
+ * Regularity is enforced at construction — an irregular index is rejected
+ * here rather than silently mishandled by every algorithm downstream.
+ *
+ * **Missing values are IEEE NaN, and every operation states its policy**
+ * (§2.4): `lag` *creates* leading missing (never zero-fill), `dropMissing`
+ * drops leading/trailing runs but rejects interior missing (dropping those
+ * would fabricate a regular index the data does not have), and `lagMatrix`
+ * rejects missing outright. Nothing imputes silently.
+ *
+ * Constructible from a `cajeta.nucleo.frame.Table` column (§10.3) without
+ * the frame becoming a dependency of the numerics — the frame is read
+ * once, here, into the series' own storage.
+ */
+public final class Series {
+
+    float64[] v;
+    int64 n;
+    int64 start;
+    int64 step;
+
+    Series(#float64[] v, int64 n, int64 start, int64 step) {
+        this.v #= v;
+        this.n = n;
+        this.start = start;
+        this.step = step;
+        return;
+    }
+
+    /** True when `x` is missing (IEEE NaN self-comparison). */
+    public static boolean isMissingValue(float64 x) { return x != x; }
+
+    /** The missing-value marker (NaN). */
+    public static float64 missing() { return 0.0 / 0.0; }
+
+    /** A series over `values` with the implicit index `0..n-1`, step 1. */
+    public static #Series of(Tensor<float64> values) {
+        int64 n = Series.checkedLength(values);
+        float64[] a = heap float64[n];
+        int64 i = 0;
+        while (i < n) { a[i] = values.flatGet(i); i = i + 1; }
+        Series s = heap Series(#a, n, (int64) 0, (int64) 1);
+        return #s;
+    }
+
+    /**
+     * A series over `values` with an explicit regular index. Rejects a
+     * mismatched index length and any irregular or non-increasing index.
+     */
+    public static #Series of(Tensor<float64> values, int64[] index) {
+        int64 n = Series.checkedLength(values);
+        if ((int64) index.count() != n) {
+            throw heap TsException("Series.of: index length "
+                + (int64) index.count() + " does not match " + n + " values");
+        }
+        int64 start = index[0];
+        int64 step = 1;
+        if (n > 1) {
+            step = index[1] - index[0];
+            if (step <= 0) {
+                throw heap TsException("Series.of: the time index must be "
+                    + "strictly increasing (step " + step + " at position 1)");
+            }
+            int64 i = 2;
+            while (i < n) {
+                if (index[i] - index[i - 1] != step) {
+                    throw heap TsException("Series.of: irregular time index — "
+                        + "gap " + (index[i] - index[i - 1]) + " at position "
+                        + i + " differs from step " + step + "; a series is "
+                        + "measurements at regular intervals (spec 1.5.4)");
+                }
+                i = i + 1;
+            }
+        }
+        float64[] a = heap float64[n];
+        int64 j = 0;
+        while (j < n) { a[j] = values.flatGet(j); j = j + 1; }
+        Series s = heap Series(#a, n, start, step);
+        return #s;
+    }
+
+    /**
+     * A series from a frame column, with the time index taken from the
+     * int64 column `indexCol`. The value column must be float64-physical
+     * and the index column int64-physical; anything else is loud.
+     */
+    public static #Series fromTable<R>(Table<R> t, String valueCol,
+                                       String indexCol) {
+        int64 rows = t.rowCount();
+        Series.checkColumn<R>(t, valueCol, "float64", "value");
+        Series.checkColumn<R>(t, indexCol, "int64", "index");
+        float64[] a = heap float64[rows];
+        int64[] idx = heap int64[rows];
+        int64 r = 0;
+        while (r < rows) {
+            a[r] = t.f64At(valueCol, r);
+            idx[r] = t.i64At(indexCol, r);
+            r = r + 1;
+        }
+        int64[] sh = heap int64[1]; sh[0] = rows;
+        return Series.of(Tensor.of<float64>(a, sh), idx);
+    }
+
+    /** A series from a frame column, with the implicit `0..n-1` index. */
+    public static #Series fromTable<R>(Table<R> t, String valueCol) {
+        int64 rows = t.rowCount();
+        Series.checkColumn<R>(t, valueCol, "float64", "value");
+        float64[] a = heap float64[rows];
+        int64 r = 0;
+        while (r < rows) {
+            a[r] = t.f64At(valueCol, r);
+            r = r + 1;
+        }
+        int64[] sh = heap int64[1]; sh[0] = rows;
+        return Series.of(Tensor.of<float64>(a, sh));
+    }
+
+    /** Number of observations. */
+    public int64 count() { return this.n; }
+
+    /** The value at position `i` (may be missing — check `isMissing`). */
+    public float64 get(int64 i) {
+        this.checkPos(i);
+        return this.v[i];
+    }
+
+    /** The time index at position `i`. */
+    public int64 indexAt(int64 i) {
+        this.checkPos(i);
+        return this.start + i * this.step;
+    }
+
+    /** First index value. */
+    public int64 indexStart() { return this.start; }
+
+    /** The regular index step (always > 0). */
+    public int64 indexStep() { return this.step; }
+
+    /** True when position `i` holds a missing value. */
+    public boolean isMissing(int64 i) {
+        this.checkPos(i);
+        return Series.isMissingValue(this.v[i]);
+    }
+
+    /** True when any value is missing. */
+    public boolean hasMissing() { return this.missingCount() > 0; }
+
+    /** How many values are missing. */
+    public int64 missingCount() {
+        int64 c = 0;
+        int64 i = 0;
+        while (i < this.n) {
+            if (Series.isMissingValue(this.v[i])) { c = c + 1; }
+            i = i + 1;
+        }
+        return c;
+    }
+
+    /** The values as a fresh 1-D tensor (missing stays NaN — propagate). */
+    public #Tensor<float64> values() {
+        float64[] a = heap float64[this.n];
+        int64 i = 0;
+        while (i < this.n) { a[i] = this.v[i]; i = i + 1; }
+        int64[] sh = heap int64[1]; sh[0] = this.n;
+        return Tensor.of<float64>(a, sh);
+    }
+
+    /** The time index, materialized as a fresh array. */
+    public #int64[] index() {
+        int64[] idx = heap int64[this.n];
+        int64 i = 0;
+        while (i < this.n) { idx[i] = this.start + i * this.step; i = i + 1; }
+        return #idx;
+    }
+
+    /**
+     * The series shifted by `k`: position `i` holds `y(i-k)`, and the
+     * first `k` positions are MISSING — never zero-filled (§2.2). Length
+     * and index are unchanged; the length accounting is explicit in the
+     * missing count. `lag(0)` is the identity copy.
+     */
+    public #Series lag(int64 k) {
+        if (k < 0) {
+            throw heap TsException("Series.lag: k must be >= 0 (got " + k
+                + "); to look forward, lag the target instead");
+        }
+        float64[] a = heap float64[this.n];
+        int64 i = 0;
+        while (i < this.n) {
+            if (i < k) { a[i] = Series.missing(); }
+            else { a[i] = this.v[i - k]; }
+            i = i + 1;
+        }
+        Series s = heap Series(#a, this.n, this.start, this.step);
+        return #s;
+    }
+
+    /**
+     * The lag design matrix over lags `1..p` (§2.3): shape `(n-p, p)`,
+     * row `t` (for `t = p..n-1`) is `[y(t-1), y(t-2), .., y(t-p)]` — the
+     * incomplete leading rows are DROPPED, so the length change is
+     * explicit in the shape. Missing values are rejected: a design matrix
+     * with holes is not a design matrix.
+     */
+    public #Tensor<float64> lagMatrix(int64 p) {
+        if (p < 1 || p >= this.n) {
+            throw heap TsException("Series.lagMatrix: p must be in [1, n-1] "
+                + "(p = " + p + ", n = " + this.n + ")");
+        }
+        if (this.hasMissing()) {
+            throw heap TsException("Series.lagMatrix: the series has "
+                + this.missingCount() + " missing value(s) — dropMissing() "
+                + "or repair them first; the lag matrix does not impute");
+        }
+        int64 rows = this.n - p;
+        float64[] m = heap float64[rows * p];
+        int64 t = p;
+        while (t < this.n) {
+            int64 j = 0;
+            while (j < p) {
+                m[(t - p) * p + j] = this.v[t - 1 - j];
+                j = j + 1;
+            }
+            t = t + 1;
+        }
+        int64[] sh = heap int64[2]; sh[0] = rows; sh[1] = p;
+        return Tensor.of<float64>(m, sh);
+    }
+
+    /**
+     * Drop missing values — POLICY: only leading and trailing runs of
+     * missing can be dropped, because the index of the result must stay
+     * regular. Interior missing is rejected with the offending position
+     * named; repair or model it explicitly instead.
+     */
+    public #Series dropMissing() {
+        int64 lo = 0;
+        while (lo < this.n && Series.isMissingValue(this.v[lo])) {
+            lo = lo + 1;
+        }
+        int64 hi = this.n;
+        while (hi > lo && Series.isMissingValue(this.v[hi - 1])) {
+            hi = hi - 1;
+        }
+        if (lo >= hi) {
+            throw heap TsException("Series.dropMissing: every value is "
+                + "missing — an empty series is not constructible");
+        }
+        int64 i = lo;
+        while (i < hi) {
+            if (Series.isMissingValue(this.v[i])) {
+                throw heap TsException("Series.dropMissing: interior missing "
+                    + "value at position " + i + " — dropping it would make "
+                    + "the index irregular; repair or model it explicitly");
+            }
+            i = i + 1;
+        }
+        int64 m = hi - lo;
+        float64[] a = heap float64[m];
+        i = 0;
+        while (i < m) { a[i] = this.v[lo + i]; i = i + 1; }
+        Series s = heap Series(#a, m, this.start + lo * this.step, this.step);
+        return #s;
+    }
+
+    // -- internals ---------------------------------------------------------
+
+    static int64 checkedLength(Tensor<float64> values) {
+        if ((int64) values.ndim() != 1) {
+            throw heap TsException("Series: values must be a 1-D tensor (got "
+                + (int64) values.ndim() + "-D)");
+        }
+        int64 n = values.shapeAt(0);
+        if (n < 1) {
+            throw heap TsException("Series: at least one observation is "
+                + "required");
+        }
+        return n;
+    }
+
+    static void checkColumn<R>(Table<R> t, String name, String wantType,
+                               String role) {
+        int32 nc = t.colCount();
+        int32 i = 0;
+        while (i < nc) {
+            if (t.colNameAt(i).equals(name)) {
+                if (!t.colTypeAt(i).equals(wantType)) {
+                    throw heap TsException("Series.fromTable: " + role
+                        + " column '" + name + "' is '" + t.colTypeAt(i)
+                        + "' — it must be " + wantType);
+                }
+                return;
+            }
+            i = i + 1;
+        }
+        throw heap TsException("Series.fromTable: " + role + " column '"
+            + name + "' is not in the schema");
+    }
+
+    void checkPos(int64 i) {
+        if (i < 0 || i >= this.n) {
+            throw heap TsException("Series: position " + i
+                + " out of range [0, " + this.n + ")");
+        }
+        return;
+    }
+}
