@@ -1,0 +1,38 @@
+package dev.cajeta.timeseries.selftest;
+
+import cajeta.math.Tensor;
+import cajeta.math.npio.Npy;
+import cajeta.error.RecoverableException;
+
+/**
+ * Golden-fixture access: `.npy` files computed by the pinned statsmodels
+ * 0.14.6 (`tools/fixtures/gen_ts.py`), located through the `TS_FIXTURES`
+ * env var run-tests.sh sets. NaN in a fixture is part of the claim (e.g.
+ * `seasonal_decompose` trend endpoints) — `agree` treats NaN==NaN as
+ * agreement so parity checks cover the missing positions too.
+ */
+public final class Fx {
+
+    public static #Tensor<float64> load(String name) {
+        String root = System.env.get("TS_FIXTURES");
+        if (root == null) {
+            throw heap RecoverableException(
+                "TS_FIXTURES not set — run the suite via run-tests.sh");
+        }
+        return Npy.loadF64(root + "/" + name + ".npy");
+    }
+
+    public static boolean close(float64 a, float64 b, float64 tol) {
+        float64 d = a - b;
+        if (d < 0.0) { d = -d; }
+        return d < tol;
+    }
+
+    /** Equal within tol, with NaN agreeing with NaN. */
+    public static boolean agree(float64 a, float64 b, float64 tol) {
+        boolean an = a != a;
+        boolean bn = b != b;
+        if (an || bn) { return an && bn; }
+        return Fx.close(a, b, tol);
+    }
+}

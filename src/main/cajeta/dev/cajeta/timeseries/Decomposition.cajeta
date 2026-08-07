@@ -1,0 +1,36 @@
+package dev.cajeta.timeseries;
+
+/**
+ * The result of a classical decomposition (spec §3): trend, seasonal, and
+ * residual components as series over the SAME index as the input. Trend
+ * and residual carry MISSING at the endpoints where the centred moving
+ * average has no complete window — the statsmodels endpoint policy,
+ * preserved rather than trimmed (plan 2.1.5).
+ *
+ * Recombination: `trend + seasonal + resid` (additive) or
+ * `trend × seasonal × resid` (multiplicative) reproduces the observed
+ * series wherever the trend is defined.
+ */
+public final class Decomposition {
+
+    /** The centred-moving-average trend (endpoints missing). */
+    public Series trend;
+
+    /** The repeating seasonal component (complete — no missing). */
+    public Series seasonal;
+
+    /** The residual (missing exactly where the trend is). */
+    public Series resid;
+
+    /** True for the multiplicative model, false for additive. */
+    public boolean multiplicative;
+
+    Decomposition(#Series trend, #Series seasonal, #Series resid,
+                  boolean multiplicative) {
+        this.trend #= trend;
+        this.seasonal #= seasonal;
+        this.resid #= resid;
+        this.multiplicative = multiplicative;
+        return;
+    }
+}

@@ -1,0 +1,148 @@
+package dev.cajeta.timeseries;
+
+import cajeta.math.Tensor;
+
+/**
+ * Classical seasonal decomposition (spec §3), matching statsmodels
+ * `seasonal_decompose` exactly — including its endpoint policy:
+ *
+ * - **Trend** by centred moving average. Odd period `p`: the plain
+ *   `p`-window mean, `(p-1)/2` endpoints missing each side. Even period:
+ *   the `p+1`-window with half weights at both ends (the "2×p MA"),
+ *   `p/2` endpoints missing each side.
+ * - **Seasonal** by period averaging of the detrended series (mean over
+ *   the non-missing detrended values at each phase), centred so the
+ *   factors sum to zero (additive) or average to one (multiplicative),
+ *   then tiled over the full length.
+ * - **Residual** is what remains — missing exactly where the trend is.
+ *
+ * Policy (loud, spec §3.3–§3.4): the series must be complete (no missing
+ * — repair first), the period at least 2, and the series at least two
+ * complete cycles long. The multiplicative model additionally requires
+ * strictly positive values.
+ */
+public final class Decompose {
+
+    /** Additive: `y = trend + seasonal + resid`. */
+    public static #Decomposition additive(Series s, int64 period) {
+        return Decompose.run(s, period, false);
+    }
+
+    /** Multiplicative: `y = trend × seasonal × resid` (positive series). */
+    public static #Decomposition multiplicative(Series s, int64 period) {
+        return Decompose.run(s, period, true);
+    }
+
+    static #Decomposition run(Series s, int64 period, boolean mult) {
+        int64 n = s.count();
+        if (period < 2) {
+            throw heap TsException("Decompose: period must be >= 2 (got "
+                + period + ")");
+        }
+        if (n < 2 * period) {
+            throw heap TsException("Decompose: the series has " + n
+                + " observations but period " + period + " needs at least "
+                + "two complete cycles (" + (2 * period) + ")");
+        }
+        if (s.hasMissing()) {
+            throw heap TsException("Decompose: the series has "
+                + s.missingCount() + " missing value(s) — decomposition "
+                + "does not impute; repair them first");
+        }
+        float64[] x = heap float64[n];
+        int64 i = 0;
+        while (i < n) {
+            x[i] = s.get(i);
+            if (mult && x[i] <= 0.0) {
+                throw heap TsException("Decompose: multiplicative model "
+                    + "requires strictly positive values, but y(" + i
+                    + ") = " + x[i] + " — use the additive model");
+            }
+            i = i + 1;
+        }
+
+        // Trend: centred moving average, statsmodels window shapes.
+        float64[] tr = heap float64[n];
+        int64 half = period / 2;
+        boolean even = period % 2 == 0;
+        i = 0;
+        while (i < n) {
+            if (i < half || i >= n - half) {
+                tr[i] = Series.missing();
+            } else {
+                float64 acc = 0.0;
+                if (even) {
+                    // p+1 window, half weight at both extremes.
+                    acc = 0.5 * x[i - half] + 0.5 * x[i + half];
+                    int64 j = i - half + 1;
+                    while (j <= i + half - 1) { acc = acc + x[j]; j = j + 1; }
+                } else {
+                    int64 j = i - half;
+                    while (j <= i + half) { acc = acc + x[j]; j = j + 1; }
+                }
+                tr[i] = acc / (float64) period;
+            }
+            i = i + 1;
+        }
+
+        // Seasonal: period averages of the detrended series (non-missing
+        // positions only), centred, tiled.
+        float64[] avg = heap float64[period];
+        int64 k = 0;
+        while (k < period) {
+            float64 acc = 0.0;
+            int64 cnt = 0;
+            int64 t = k;
+            while (t < n) {
+                if (!Series.isMissingValue(tr[t])) {
+                    if (mult) { acc = acc + x[t] / tr[t]; }
+                    else { acc = acc + (x[t] - tr[t]); }
+                    cnt = cnt + 1;
+                }
+                t = t + period;
+            }
+            if (cnt == 0) {
+                throw heap TsException("Decompose: no complete window covers "
+                    + "phase " + k + " — the series is too short for period "
+                    + period);
+            }
+            avg[k] = acc / (float64) cnt;
+            k = k + 1;
+        }
+        float64 centre = 0.0;
+        k = 0;
+        while (k < period) { centre = centre + avg[k]; k = k + 1; }
+        centre = centre / (float64) period;
+        k = 0;
+        while (k < period) {
+            if (mult) { avg[k] = avg[k] / centre; }
+            else { avg[k] = avg[k] - centre; }
+            k = k + 1;
+        }
+        float64[] se = heap float64[n];
+        i = 0;
+        while (i < n) { se[i] = avg[i % period]; i = i + 1; }
+
+        // Residual: what remains, missing where the trend is.
+        float64[] re = heap float64[n];
+        i = 0;
+        while (i < n) {
+            if (Series.isMissingValue(tr[i])) {
+                re[i] = Series.missing();
+            } else if (mult) {
+                re[i] = x[i] / (tr[i] * se[i]);
+            } else {
+                re[i] = x[i] - tr[i] - se[i];
+            }
+            i = i + 1;
+        }
+
+        int64[] sh = heap int64[1]; sh[0] = n;
+        int64[] idx = s.index();
+        Series trS = Series.of(Tensor.of<float64>(tr, sh), idx);
+        Series seS = Series.of(Tensor.of<float64>(se, sh), idx);
+        Series reS = Series.of(Tensor.of<float64>(re, sh), idx);
+        Decomposition d = heap Decomposition(#trS, #seS, #reS, mult);
+        return #d;
+    }
+}
