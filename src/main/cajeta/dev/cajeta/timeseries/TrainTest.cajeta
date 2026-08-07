@@ -1,0 +1,21 @@
+package dev.cajeta.timeseries;
+
+/**
+ * A chronological train/test split (spec §2.5, §11.5): `train` is
+ * strictly earlier than `test`, always. There is no shuffled variant
+ * anywhere in this library — see {@link Split}.
+ */
+public final class TrainTest {
+
+    /** The earlier portion. */
+    public Series train;
+
+    /** The later portion — strictly after every training observation. */
+    public Series test;
+
+    TrainTest(#Series train, #Series test) {
+        this.train #= train;
+        this.test #= test;
+        return;
+    }
+}

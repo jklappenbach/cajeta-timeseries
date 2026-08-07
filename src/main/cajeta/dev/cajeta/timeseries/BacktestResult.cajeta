@@ -1,0 +1,71 @@
+package dev.cajeta.timeseries;
+
+import cajeta.math.Tensor;
+import dev.cajeta.ml.Metrics;
+
+/**
+ * The result of a rolling-origin backtest (spec §9.3–§9.4): the
+ * `h`-step-ahead predictions and the actuals they are scored against.
+ * MSE/RMSE/MAE reuse `dev.cajeta.ml.Metrics` — RMSE is not redefined
+ * here. MAPE is this library's addition; its divide-by-zero behaviour
+ * is DOCUMENTED: an actual of exactly zero is rejected loudly, because
+ * a percentage error against zero is undefined and every silent
+ * convention (skip, epsilon, cap) misleads differently.
+ */
+public final class BacktestResult {
+
+    Tensor<float64> pred;
+    Tensor<float64> act;
+    int64 h;
+
+    BacktestResult(#Tensor<float64> pred, #Tensor<float64> act, int64 h) {
+        this.pred #= pred;
+        this.act #= act;
+        this.h = h;
+        return;
+    }
+
+    /** Number of forecast origins scored. */
+    public int64 count() { return this.pred.shapeAt(0); }
+
+    /** The horizon each prediction was made at. */
+    public int64 horizon() { return this.h; }
+
+    /** The `i`-th h-step-ahead prediction. */
+    public float64 prediction(int64 i) { return this.pred.flatGet(i); }
+
+    /** The actual the `i`-th prediction is scored against. */
+    public float64 actual(int64 i) { return this.act.flatGet(i); }
+
+    /** Mean squared error (`dev.cajeta.ml.Metrics.mse`). */
+    public float64 mse() { return Metrics.mse(this.act, this.pred); }
+
+    /** Root mean squared error (`dev.cajeta.ml.Metrics.rmse`). */
+    public float64 rmse() { return Metrics.rmse(this.act, this.pred); }
+
+    /** Mean absolute error (`dev.cajeta.ml.Metrics.mae`). */
+    public float64 mae() { return Metrics.mae(this.act, this.pred); }
+
+    /**
+     * Mean absolute percentage error, as a FRACTION (0.1 = 10%). Throws
+     * on any zero actual — stated policy, not silent skipping.
+     */
+    public float64 mape() {
+        int64 n = this.count();
+        float64 acc = 0.0;
+        int64 i = 0;
+        while (i < n) {
+            float64 a = this.act.flatGet(i);
+            if (a == 0.0) {
+                throw heap TsException("mape: actual at position " + i
+                    + " is exactly zero — the percentage error is "
+                    + "undefined; use mae or rmse for this series");
+            }
+            float64 e = (this.pred.flatGet(i) - a) / a;
+            if (e < 0.0) { e = -e; }
+            acc = acc + e;
+            i = i + 1;
+        }
+        return acc / (float64) n;
+    }
+}

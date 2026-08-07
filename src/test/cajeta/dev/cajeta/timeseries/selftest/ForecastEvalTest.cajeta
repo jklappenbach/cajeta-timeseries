@@ -1,0 +1,216 @@
+package dev.cajeta.timeseries.selftest;
+
+import dev.cajeta.unit.Assert;
+import cajeta.math.Tensor;
+import dev.cajeta.timeseries.Arima;
+import dev.cajeta.timeseries.AutoReg;
+import dev.cajeta.timeseries.Backtest;
+import dev.cajeta.timeseries.BacktestResult;
+import dev.cajeta.timeseries.ForecastResult;
+import dev.cajeta.timeseries.MovingAverageForecaster;
+import dev.cajeta.timeseries.Series;
+import dev.cajeta.timeseries.Split;
+import dev.cajeta.timeseries.TrainTest;
+import dev.cajeta.timeseries.TsException;
+
+/**
+ * ml-timeseries U8 — forecasting and evaluation, where the §11.5
+ * discipline lives: original-scale ARIMA forecasts (8.1.1, §11.4),
+ * interval parity (8.1.2), the chronological-only split (8.1.3),
+ * leak-proof rolling-origin backtesting (8.1.4), Metrics reuse + MAPE
+ * policy (8.1.5), the baseline comparison (8.1.6), and horizon
+ * degradation (8.1.7).
+ */
+public class ForecastEvalTest {
+
+    public ForecastEvalTest() { return; }
+
+    // 8.1.1 + §11.4 — an ARIMA fitted on a differenced series forecasts
+    // in the ORIGINAL scale: parity with statsmodels' get_forecast on
+    // the integrated fixture, and the level magnitude is the series',
+    // not the differences'.
+    @Test
+    public void arimaForecastsInOriginalScale() {
+        Series s = Series.of(Fx.load("ts_arima111_series"));
+        Arima m = heap Arima((int64) 1, (int64) 1, (int64) 1);
+        m.fit(s);
+        ForecastResult f = m.forecastInterval((int64) 10, 0.05);
+        Tensor<float64> wm = Fx.load("ts_arima_111_fc");
+        Tensor<float64> wc = Fx.load("ts_arima_111_fc_ci");
+        int64 i = 0;
+        while (i < 10) {
+            Assert.isTrue(Fx.close(f.mean.get(i), wm.flatGet(i), 0.02));
+            Assert.isTrue(Fx.close(f.lower.get(i), wc.flatGet(i * 2), 0.05));
+            Assert.isTrue(Fx.close(f.upper.get(i), wc.flatGet(i * 2 + 1), 0.05));
+            i = i + 1;
+        }
+        // Level scale, not difference scale: near the last observation.
+        float64 last = s.get(s.count() - 1);
+        float64 d0 = f.mean.get((int64) 0) - last;
+        if (d0 < 0.0) { d0 = -d0; }
+        Assert.isTrue(d0 < 10.0);
+        // The index continues the series.
+        Assert.equals(f.mean.indexAt((int64) 0),
+            s.indexAt(s.count() - 1) + s.indexStep());
+        return;
+    }
+
+    // 8.1.2 + 8.1.7 — intervals at the stated level match statsmodels
+    // (AutoReg exactly; the MLE family to optimizer tolerance) and WIDEN
+    // with the horizon.
+    @Test
+    public void forecastIntervalsMatch() {
+        Series ar2 = Series.of(Fx.load("ts_ident_ar2"));
+        AutoReg a = heap AutoReg((int64) 2);
+        a.fit(ar2);
+        ForecastResult fa = a.forecastInterval((int64) 5, 0.05);
+        Tensor<float64> wm = Fx.load("ts_ar_ar2_c_fc");
+        Tensor<float64> wc = Fx.load("ts_ar_ar2_c_fc_ci");
+        int64 i = 0;
+        while (i < 5) {
+            Assert.isTrue(Fx.close(fa.mean.get(i), wm.flatGet(i), 0.0000001));
+            Assert.isTrue(Fx.close(fa.lower.get(i), wc.flatGet(i * 2), 0.000001));
+            Assert.isTrue(Fx.close(fa.upper.get(i), wc.flatGet(i * 2 + 1), 0.000001));
+            i = i + 1;
+        }
+
+        Series ma2 = Series.of(Fx.load("ts_ident_ma2"));
+        Arima mm = heap Arima((int64) 0, (int64) 0, (int64) 2);
+        mm.setTrend("n");
+        mm.fit(ma2);
+        ForecastResult fm = mm.forecastInterval((int64) 10, 0.05);
+        Tensor<float64> mfc = Fx.load("ts_arima_ma2_fc");
+        Tensor<float64> mci = Fx.load("ts_arima_ma2_fc_ci");
+        i = 0;
+        while (i < 10) {
+            Assert.isTrue(Fx.close(fm.mean.get(i), mfc.flatGet(i), 0.02));
+            Assert.isTrue(Fx.close(fm.lower.get(i), mci.flatGet(i * 2), 0.05));
+            Assert.isTrue(Fx.close(fm.upper.get(i), mci.flatGet(i * 2 + 1), 0.05));
+            i = i + 1;
+        }
+        // Widening with horizon (8.1.7): width(3) > width(1); beyond lag
+        // q the MA(2) band is flat, so compare inside the memory.
+        float64 w1 = fm.upper.get((int64) 0) - fm.lower.get((int64) 0);
+        float64 w3 = fm.upper.get((int64) 2) - fm.lower.get((int64) 2);
+        Assert.isTrue(w3 > w1);
+        return;
+    }
+
+    // 8.1.3 + §11.5 — the chronological split is the ONLY split: the
+    // boundary is strict, both halves keep their index, and Split's
+    // surface has no shuffle to reach for.
+    @Test
+    public void chronologicalSplitOnly() {
+        Series s = Series.of(Fx.load("ts_ident_ar2"));
+        TrainTest tt = Split.chronological(s, 0.25);
+        Assert.equals(tt.train.count() + tt.test.count(), s.count());
+        Assert.equals(tt.train.count(), (int64) 750);
+        // Strictly earlier: the last training index precedes the first
+        // test index.
+        Assert.isTrue(tt.train.indexAt(tt.train.count() - 1)
+            < tt.test.indexAt((int64) 0));
+        // Values are the original ones, in order — nothing was permuted.
+        Assert.isTrue(Cajeta.f64ToBits(tt.test.get((int64) 0))
+            == Cajeta.f64ToBits(s.get((int64) 750)));
+
+        boolean threw = false;
+        try {
+            TrainTest bad = Split.chronological(s, 1.5);
+        } catch (TsException ex) { threw = true; }
+        Assert.isTrue(threw);
+        return;
+    }
+
+    // 8.1.4 + §11.5 — the leak test: two series identical except for the
+    // LAST observation must produce BIT-IDENTICAL backtest predictions
+    // at every origin — every fit precedes the divergence point. Any
+    // future observation reaching any fit fails this.
+    @Test
+    public void rollingOriginNeverLeaks() {
+        Tensor<float64> base = Fx.load("ts_stat_wn");
+        int64 n = base.shapeAt(0);
+        float64[] b = heap float64[n];
+        int64 i = 0;
+        while (i < n) { b[i] = base.flatGet(i); i = i + 1; }
+        b[n - 1] = b[n - 1] + 1000.0;               // tamper with the future
+        int64[] sh = heap int64[1]; sh[0] = n;
+        Series sa = Series.of(base);
+        Series sb = Series.of(Tensor.of<float64>(b, sh));
+
+        AutoReg f1 = heap AutoReg((int64) 1);
+        BacktestResult ra = Backtest.run(f1, sa, (int64) 150, (int64) 1);
+        AutoReg f2 = heap AutoReg((int64) 1);
+        BacktestResult rb = Backtest.run(f2, sb, (int64) 150, (int64) 1);
+        Assert.equals(ra.count(), rb.count());
+        i = 0;
+        while (i < ra.count()) {
+            Assert.equals(Cajeta.f64ToBits(rb.prediction(i)),
+                Cajeta.f64ToBits(ra.prediction(i)));
+            i = i + 1;
+        }
+        // Only the final ACTUAL differs — the tampered value is scored,
+        // never trained on.
+        Assert.isTrue(rb.actual(ra.count() - 1)
+            > ra.actual(ra.count() - 1) + 900.0);
+        return;
+    }
+
+    // 8.1.5 — MSE/RMSE/MAE come from dev.cajeta.ml.Metrics (delegation
+    // is asserted by value identity), and MAPE's zero policy is loud.
+    @Test
+    public void metricsReuseAndMapePolicy() {
+        Series ar2 = Series.of(Fx.load("ts_ident_ar2"));
+        AutoReg f = heap AutoReg((int64) 2);
+        BacktestResult r = Backtest.run(f, ar2, (int64) 950, (int64) 1);
+        // rmse² == mse (the ml.Metrics contract).
+        Assert.isTrue(Fx.close(r.rmse() * r.rmse(), r.mse(), 0.0000000001));
+        Assert.isTrue(r.mae() > 0.0);
+
+        // A series holding an exact zero in the scored region: MAPE is
+        // rejected with the policy named; MAE still works.
+        float64[] a = heap float64[20];
+        int64 i = 0;
+        while (i < 20) { a[i] = (float64) (i % 7) - 3.0; i = i + 1; }
+        int64[] sh = heap int64[1]; sh[0] = 20;
+        Series zs = Series.of(Tensor.of<float64>(a, sh));
+        MovingAverageForecaster mf = heap MovingAverageForecaster((int64) 3);
+        BacktestResult rz = Backtest.run(mf, zs, (int64) 10, (int64) 1);
+        float64 mae = rz.mae();
+        boolean threw = false;
+        try {
+            float64 mp = rz.mape();
+        } catch (TsException ex) { threw = true; }
+        Assert.isTrue(threw);
+        return;
+    }
+
+    // 8.1.6 — the model beats the U6 baseline on a series with real
+    // structure, and the comparison is REPORTED (both numbers surface).
+    @Test
+    public void modelBeatsBaseline() {
+        Series ar2 = Series.of(Fx.load("ts_ident_ar2"));
+        AutoReg model = heap AutoReg((int64) 2);
+        BacktestResult rm = Backtest.run(model, ar2, (int64) 900, (int64) 1);
+        MovingAverageForecaster base = heap MovingAverageForecaster((int64) 5);
+        BacktestResult rb = Backtest.run(base, ar2, (int64) 900, (int64) 1);
+        System.stdout.println("baseline-vs-model rmse: baseline="
+            + rb.rmse() + " AutoReg(2)=" + rm.rmse());
+        Assert.isTrue(rm.rmse() < rb.rmse());
+        return;
+    }
+
+    // 8.1.7 — multi-step forecasts degrade with the horizon on a
+    // persistent series, and the horizon is explicit at the call site.
+    @Test
+    public void horizonDegrades() {
+        Series s = Series.of(Fx.load("ts_arima111_series"));
+        MovingAverageForecaster f1 = heap MovingAverageForecaster((int64) 3);
+        BacktestResult h1 = Backtest.run(f1, s, (int64) 950, (int64) 1);
+        MovingAverageForecaster f5 = heap MovingAverageForecaster((int64) 3);
+        BacktestResult h5 = Backtest.run(f5, s, (int64) 950, (int64) 5);
+        Assert.isTrue(h5.rmse() > h1.rmse());
+        Assert.equals(h1.horizon(), (int64) 1);
+        Assert.equals(h5.horizon(), (int64) 5);
+        return;
+    }
+}

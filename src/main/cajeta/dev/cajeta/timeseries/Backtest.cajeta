@@ -1,0 +1,48 @@
+package dev.cajeta.timeseries;
+
+import cajeta.math.Tensor;
+
+/**
+ * Rolling-origin backtesting (spec §9.3, §11.5) — the only evaluation
+ * path this library offers, because it is the only honest one: at each
+ * origin `o` the forecaster is REFIT on observations `[0, o)` alone,
+ * asked for an `h`-step forecast, and scored against the actual at
+ * `o + h − 1`. The origin then advances. No fit ever sees a future
+ * observation; the leak test in the suite would fail if one did.
+ */
+public final class Backtest {
+
+    /**
+     * Roll from `initial` training observations to the end, refitting
+     * `f` at every origin and scoring its `h`-step-ahead forecast.
+     */
+    public static #BacktestResult run(Forecaster f, Series s,
+                                      int64 initial, int64 h) {
+        int64 n = s.count();
+        if (h < 1) {
+            throw heap TsException("Backtest: the horizon must be >= 1 "
+                + "(got " + h + ")");
+        }
+        if (initial < 2 || initial + h > n) {
+            throw heap TsException("Backtest: initial " + initial
+                + " with horizon " + h + " does not fit n = " + n);
+        }
+        int64 m = n - initial - h + 1;
+        float64[] preds = heap float64[m];
+        float64[] acts = heap float64[m];
+        int64 o = initial;
+        while (o + h <= n) {
+            Series train = Split.slice(s, (int64) 0, o);
+            f.fit(train);
+            Series fc = f.forecast(h);
+            preds[o - initial] = fc.get(h - 1);
+            acts[o - initial] = s.get(o + h - 1);
+            o = o + 1;
+        }
+        int64[] sh = heap int64[1]; sh[0] = m;
+        Tensor<float64> pt = Tensor.of<float64>(preds, sh);
+        Tensor<float64> at = Tensor.of<float64>(acts, sh);
+        BacktestResult r = heap BacktestResult(#pt, #at, h);
+        return #r;
+    }
+}
