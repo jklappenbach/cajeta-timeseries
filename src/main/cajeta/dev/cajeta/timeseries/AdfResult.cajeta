@@ -1,0 +1,74 @@
+package dev.cajeta.timeseries;
+
+/**
+ * The result of an Augmented Dickey-Fuller test.
+ *
+ * **THE NULL HYPOTHESIS IS A UNIT ROOT (non-stationary).** A SMALL
+ * p-value REJECTS the unit root and concludes the series is STATIONARY —
+ * the inverse of KPSS, and the single most common misreading in the
+ * domain (spec §4.5, §11.6). Read the conclusion from
+ * {@link #isStationary}, which cannot be gotten backwards, rather than
+ * eyeballing the bare p-value against a null you may have inverted.
+ */
+public final class AdfResult {
+
+    float64 stat;
+    float64 p;
+    int64 lag;
+    int64 nUsed;
+    float64 c1;
+    float64 c5;
+    float64 c10;
+
+    AdfResult(float64 stat, float64 p, int64 lag, int64 nUsed,
+              float64 c1, float64 c5, float64 c10) {
+        this.stat = stat;
+        this.p = p;
+        this.lag = lag;
+        this.nUsed = nUsed;
+        this.c1 = c1;
+        this.c5 = c5;
+        this.c10 = c10;
+        return;
+    }
+
+    /** The tau test statistic (t-value on the lagged level). */
+    public float64 statistic() { return this.stat; }
+
+    /**
+     * MacKinnon (1994) approximate p-value — **for the UNIT-ROOT null**:
+     * small means stationary. Prefer {@link #isStationary}.
+     */
+    public float64 pValue() { return this.p; }
+
+    /** The number of lagged difference terms used. */
+    public int64 usedLag() { return this.lag; }
+
+    /** Observations used in the ADF regression. */
+    public int64 nobs() { return this.nUsed; }
+
+    /** MacKinnon (2010) critical value at 1%. */
+    public float64 crit1() { return this.c1; }
+
+    /** MacKinnon (2010) critical value at 5%. */
+    public float64 crit5() { return this.c5; }
+
+    /** MacKinnon (2010) critical value at 10%. */
+    public float64 crit10() { return this.c10; }
+
+    /**
+     * The conclusion, the right way round: true when the unit-root null
+     * is REJECTED at `alpha` — i.e. the series looks stationary.
+     */
+    public boolean isStationary(float64 alpha) { return this.p < alpha; }
+
+    /** Synonym for {@link #isStationary}, named after the mechanics. */
+    public boolean rejectsUnitRoot(float64 alpha) { return this.p < alpha; }
+
+    /** The null hypothesis, spelled out. */
+    public #String nullHypothesis() {
+        return "H0: the series has a UNIT ROOT (is non-stationary); a small "
+            + "p-value rejects H0, concluding STATIONARY - the inverse of "
+            + "KPSS";
+    }
+}

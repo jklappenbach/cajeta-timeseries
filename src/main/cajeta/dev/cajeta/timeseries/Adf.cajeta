@@ -1,0 +1,227 @@
+package dev.cajeta.timeseries;
+
+/**
+ * The Augmented Dickey-Fuller test (spec §4), matching statsmodels
+ * `adfuller` exactly: the Δy regression on the lagged level, lagged
+ * differences, and deterministic terms; Schwert's `⌊12·(n/100)^¼⌋`
+ * default `maxLag`; AIC/BIC/t-statistic automatic lag selection over a
+ * common sample followed by a refit on the full sample the chosen lag
+ * allows; MacKinnon (1994) p-values and MacKinnon (2010) finite-sample
+ * critical values.
+ *
+ * Regression forms (statsmodels' `regression` parameter): `"c"` constant
+ * (default), `"ct"` constant+trend, `"ctt"` constant+linear+quadratic
+ * trend, `"n"` none. Lag selection: `"aic"` (default), `"bic"`,
+ * `"tstat"` — or a fixed lag via {@link #testFixed}.
+ *
+ * **The null is a UNIT ROOT — small p means STATIONARY.** See
+ * {@link AdfResult}, whose accessors keep the conclusion the right way
+ * round. Missing values are rejected (repair first); a constant series
+ * is rejected (the statistic does not exist for it).
+ */
+public final class Adf {
+
+    /** ADF with constant regression and AIC lag selection (the defaults). */
+    public static #AdfResult test(Series s) {
+        return Adf.test(s, "c", "aic");
+    }
+
+    /** ADF with the given regression form, AIC lag selection. */
+    public static #AdfResult test(Series s, String regression) {
+        return Adf.test(s, regression, "aic");
+    }
+
+    /** ADF with the given regression form and lag-selection strategy. */
+    public static #AdfResult test(Series s, String regression,
+                                  String autolag) {
+        int64 mode = 0;
+        if (autolag.equals("aic")) { mode = 0; }
+        else if (autolag.equals("bic")) { mode = 1; }
+        else if (autolag.equals("tstat")) { mode = 2; }
+        else {
+            throw heap TsException("Adf: autolag must be \"aic\", \"bic\", "
+                + "or \"tstat\" (got \"" + autolag + "\"); for a fixed lag "
+                + "use testFixed");
+        }
+        return Adf.run(s, regression, (int64) -1, mode);
+    }
+
+    /** ADF with a FIXED lag count — no automatic selection. */
+    public static #AdfResult testFixed(Series s, String regression,
+                                       int64 lag) {
+        if (lag < 0) {
+            throw heap TsException("Adf.testFixed: lag must be >= 0 (got "
+                + lag + ")");
+        }
+        return Adf.run(s, regression, lag, (int64) 3);
+    }
+
+    // mode: 0 aic, 1 bic, 2 tstat, 3 fixed (maxlagIn = the fixed lag).
+    static #AdfResult run(Series s, String regression, int64 maxlagIn,
+                          int64 mode) {
+        int64 rix = MacKinnon.regIndex(regression);
+        int64 ntrend = 0;
+        if (rix == 1) { ntrend = 1; }
+        if (rix == 2) { ntrend = 2; }
+        if (rix == 3) { ntrend = 3; }
+
+        int64 n = s.count();
+        if (s.hasMissing()) {
+            throw heap TsException("Adf: the series has " + s.missingCount()
+                + " missing value(s) — the test does not impute");
+        }
+        float64[] x = heap float64[n];
+        int64 i = 0;
+        boolean allSame = true;
+        while (i < n) {
+            x[i] = s.get(i);
+            if (i > 0 && x[i] != x[0]) { allSame = false; }
+            i = i + 1;
+        }
+        if (allSame) {
+            throw heap TsException("Adf: the series is constant — the "
+                + "statistic does not exist");
+        }
+
+        // Schwert's default, clipped to what the sample can identify.
+        int64 cap = n / 2 - ntrend - 1;
+        int64 maxlag;
+        if (mode == 3 || maxlagIn >= 0) {
+            maxlag = maxlagIn;
+            if (maxlag > cap) {
+                throw heap TsException("Adf: lag " + maxlag + " exceeds what "
+                    + "n = " + n + " can identify (max " + cap + ")");
+            }
+        } else {
+            maxlag = (int64) Math.ceil(
+                12.0 * Math.pow((float64) n / 100.0, 0.25));
+            if (maxlag > cap) { maxlag = cap; }
+            if (maxlag < 0) {
+                throw heap TsException("Adf: sample size " + n + " is too "
+                    + "short for the selected regression form");
+            }
+        }
+
+        float64[] xdiff = heap float64[n - 1];
+        i = 0;
+        while (i < n - 1) { xdiff[i] = x[i + 1] - x[i]; i = i + 1; }
+
+        int64 usedlag = maxlag;
+        if (mode != 3) {
+            // Lag search over a COMMON sample (nobs at maxlag), columns
+            // ordered [trend | level | Δlags] — statsmodels' fullRHS.
+            int64 nobs = n - 1 - maxlag;
+            int64 full = ntrend + 1 + maxlag;
+            float64[] rhs = heap float64[nobs * full];
+            float64[] yv = heap float64[nobs];
+            int64 r = 0;
+            while (r < nobs) {
+                int64 t = maxlag + r;              // xdiff position
+                int64 c = 0;
+                if (ntrend >= 1) { rhs[r * full] = 1.0; c = 1; }
+                if (ntrend >= 2) {
+                    rhs[r * full + 1] = (float64) (r + 1);
+                    c = 2;
+                }
+                if (ntrend >= 3) {
+                    rhs[r * full + 2] = (float64) ((r + 1) * (r + 1));
+                    c = 3;
+                }
+                rhs[r * full + c] = x[t];
+                int64 j = 1;
+                while (j <= maxlag) {
+                    rhs[r * full + c + j] = xdiff[t - j];
+                    j = j + 1;
+                }
+                yv[r] = xdiff[t];
+                r = r + 1;
+            }
+            int64 startlag = ntrend + 1;
+            int64 bestlag = startlag;
+            if (mode == 2) {
+                // t-stat: from the longest lag down, first significant
+                // last-column t wins; none significant → startlag.
+                float64 stop = 1.6448536269514722;
+                int64 lag = startlag + maxlag;
+                while (lag >= startlag) {
+                    Ols o = Ols.fit(Adf.takeCols(rhs, nobs, full, lag),
+                                    nobs, lag, yv);
+                    float64 tl = o.tvals[lag - 1];
+                    if (tl < 0.0) { tl = -tl; }
+                    bestlag = lag;
+                    if (tl >= stop) { lag = startlag - 1; }
+                    else { lag = lag - 1; }
+                }
+            } else {
+                float64 best = 0.0;
+                boolean first = true;
+                int64 lag = startlag;
+                while (lag <= startlag + maxlag) {
+                    Ols o = Ols.fit(Adf.takeCols(rhs, nobs, full, lag),
+                                    nobs, lag, yv);
+                    float64 ic;
+                    if (mode == 0) { ic = o.aic(); } else { ic = o.bic(); }
+                    if (first || ic < best) {
+                        best = ic;
+                        bestlag = lag;
+                        first = false;
+                    }
+                    lag = lag + 1;
+                }
+            }
+            usedlag = bestlag - startlag;
+        }
+
+        // Final regression at usedlag over the longest sample it allows,
+        // columns [level | Δlags | trend] (statsmodels appends the trend);
+        // the statistic is the t-value on the level.
+        int64 nobs2 = n - 1 - usedlag;
+        int64 cols = 1 + usedlag + ntrend;
+        float64[] rhs2 = heap float64[nobs2 * cols];
+        float64[] yv2 = heap float64[nobs2];
+        int64 r2 = 0;
+        while (r2 < nobs2) {
+            int64 t = usedlag + r2;
+            rhs2[r2 * cols] = x[t];
+            int64 j = 1;
+            while (j <= usedlag) {
+                rhs2[r2 * cols + j] = xdiff[t - j];
+                j = j + 1;
+            }
+            if (ntrend >= 1) { rhs2[r2 * cols + usedlag + 1] = 1.0; }
+            if (ntrend >= 2) {
+                rhs2[r2 * cols + usedlag + 2] = (float64) (r2 + 1);
+            }
+            if (ntrend >= 3) {
+                rhs2[r2 * cols + usedlag + 3]
+                    = (float64) ((r2 + 1) * (r2 + 1));
+            }
+            yv2[r2] = xdiff[t];
+            r2 = r2 + 1;
+        }
+        Ols fin = Ols.fit(rhs2, nobs2, cols, yv2);
+        float64 stat = fin.tvals[0];
+        float64 p = MacKinnon.pValue(stat, regression);
+        AdfResult res = heap AdfResult(stat, p, usedlag, nobs2,
+            MacKinnon.crit(regression, (int64) 1, nobs2),
+            MacKinnon.crit(regression, (int64) 5, nobs2),
+            MacKinnon.crit(regression, (int64) 10, nobs2));
+        return #res;
+    }
+
+    /** The first `k` columns of a row-major `rows`×`full` matrix. */
+    static #float64[] takeCols(float64[] m, int64 rows, int64 full,
+                               int64 k) {
+        float64[] out = heap float64[rows * k];
+        int64 r = 0;
+        while (r < rows) {
+            int64 c = 0;
+            while (c < k) {
+                out[r * k + c] = m[r * full + c];
+                c = c + 1;
+            }
+            r = r + 1;
+        }
+        return #out;
+    }
+}

@@ -79,9 +79,62 @@ def gen_decompose():
     save("ts_decomp_odd_resid", r.resid)
 
 
+def gen_stationarity():
+    """U3 — ADF/KPSS (spec §4, §11.3).
+
+    Three canonical inputs (saved): a seeded random walk (unit root — ADF
+    must fail to reject), seeded white noise (stationary), and a trend-
+    stationary series. Each adfuller/kpss config saves the full result
+    vector [stat, pval, usedlag, nobs, crit1, crit5, crit10] so the cajeta
+    side asserts every documented field, not just the statistic.
+    """
+    import warnings
+    from statsmodels.tsa.stattools import adfuller, kpss
+
+    rng = np.random.default_rng(7)
+    n = 200
+    rw = np.cumsum(rng.normal(0.0, 1.0, n))
+    wn = np.random.default_rng(8).normal(0.0, 1.0, n)
+    trend = 0.1 * np.arange(n, dtype=np.float64) \
+        + np.random.default_rng(9).normal(0.0, 1.0, n)
+    save("ts_stat_rw", rw)
+    save("ts_stat_wn", wn)
+    save("ts_stat_trend", trend)
+
+    def adf(name, x, regression, autolag="AIC", maxlag=None):
+        r = adfuller(x, maxlag=maxlag, regression=regression,
+                     autolag=autolag)
+        stat, pval, usedlag, nobs, crit = r[0], r[1], r[2], r[3], r[4]
+        save(name, [stat, pval, float(usedlag), float(nobs),
+                    crit["1%"], crit["5%"], crit["10%"]])
+
+    adf("ts_adf_wn_c_aic", wn, "c")
+    adf("ts_adf_rw_c_aic", rw, "c")
+    adf("ts_adf_trend_c_aic", trend, "c")
+    adf("ts_adf_wn_c_bic", wn, "c", autolag="BIC")
+    adf("ts_adf_wn_c_tstat", wn, "c", autolag="t-stat")
+    adf("ts_adf_trend_ct_aic", trend, "ct")
+    adf("ts_adf_trend_ctt_aic", trend, "ctt")
+    adf("ts_adf_rw_n_aic", rw, "n")
+    adf("ts_adf_wn_c_fixed5", wn, "c", autolag=None, maxlag=5)
+
+    def kp(name, x, regression):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            stat, pval, lags, crit = kpss(x, regression=regression,
+                                          nlags="auto")
+        save(name, [stat, pval, float(lags),
+                    crit["10%"], crit["5%"], crit["2.5%"], crit["1%"]])
+
+    kp("ts_kpss_wn_c", wn, "c")
+    kp("ts_kpss_rw_c", rw, "c")
+    kp("ts_kpss_trend_ct", trend, "ct")
+
+
 def main():
     print(f"statsmodels {statsmodels.__version__} fixtures -> {OUT}")
     gen_decompose()
+    gen_stationarity()
 
 
 if __name__ == "__main__":

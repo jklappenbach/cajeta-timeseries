@@ -1,0 +1,120 @@
+package dev.cajeta.timeseries;
+
+import cajeta.math.Tensor;
+import cajeta.math.linalg.LinAlg;
+
+/**
+ * Minimal OLS for the test regressions (ADF, KPSS detrending, and later
+ * AutoReg): coefficients by `linalg.lstsq`, standard errors from the
+ * `(XᵀX)⁻¹` diagonal (via `pinv`, statsmodels' own route), and the OLS
+ * log-likelihood / information criteria statsmodels' `_autolag` ranks by:
+ *
+ *   llf = -n/2·(log 2π + log(SSR/n) + 1)
+ *   aic = -2·llf + 2p        bic = -2·llf + p·log n
+ *
+ * with `p` the column count. PACKAGE-PRIVATE: consumers see test results,
+ * not this — the ecosystem's public inference surface is
+ * `dev.cajeta.ml.LinearRegression.summary()`.
+ */
+final class Ols {
+
+    float64[] beta;     // [p]
+    float64[] tvals;    // [p]
+    float64[] resid;    // [n]
+    float64 ssr;
+    float64 llf;
+    int64 nobs;
+    int64 ncols;
+
+    Ols(#float64[] beta, #float64[] tvals, #float64[] resid, float64 ssr,
+        float64 llf, int64 nobs, int64 ncols) {
+        this.beta #= beta;
+        this.tvals #= tvals;
+        this.resid #= resid;
+        this.ssr = ssr;
+        this.llf = llf;
+        this.nobs = nobs;
+        this.ncols = ncols;
+        return;
+    }
+
+    float64 aic() { return -2.0 * this.llf + 2.0 * (float64) this.ncols; }
+
+    float64 bic() {
+        return -2.0 * this.llf
+            + (float64) this.ncols * Math.log((float64) this.nobs);
+    }
+
+    /** Fit y ~ X (row-major flat `xf`, `rows` × `cols`). */
+    static #Ols fit(float64[] xf, int64 rows, int64 cols, float64[] y) {
+        if (rows <= cols) {
+            throw heap TsException("Ols: " + rows + " observations cannot "
+                + "identify " + cols + " coefficients");
+        }
+        float64[] xc = heap float64[rows * cols];
+        int64 i = 0;
+        while (i < rows * cols) { xc[i] = xf[i]; i = i + 1; }
+        float64[] yc = heap float64[rows];
+        i = 0;
+        while (i < rows) { yc[i] = y[i]; i = i + 1; }
+        int64[] xsh = heap int64[2]; xsh[0] = rows; xsh[1] = cols;
+        int64[] ysh = heap int64[1]; ysh[0] = rows;
+        Tensor<float64> xt = Tensor.of<float64>(xc, xsh);
+        Tensor<float64> yt = Tensor.of<float64>(yc, ysh);
+
+        Tensor<float64> bt = LinAlg.lstsq<float64>(xt, yt);
+        float64[] beta = heap float64[cols];
+        int64 j = 0;
+        while (j < cols) { beta[j] = bt.flatGet(j); j = j + 1; }
+
+        float64[] resid = heap float64[rows];
+        float64 ssr = 0.0;
+        i = 0;
+        while (i < rows) {
+            float64 fitv = 0.0;
+            j = 0;
+            while (j < cols) {
+                fitv = fitv + xf[i * cols + j] * beta[j];
+                j = j + 1;
+            }
+            resid[i] = y[i] - fitv;
+            ssr = ssr + resid[i] * resid[i];
+            i = i + 1;
+        }
+
+        // (XᵀX)⁻¹ diagonal for the standard errors.
+        float64[] g = heap float64[cols * cols];
+        int64 a = 0;
+        while (a < cols) {
+            int64 b = 0;
+            while (b < cols) {
+                float64 acc = 0.0;
+                i = 0;
+                while (i < rows) {
+                    acc = acc + xf[i * cols + a] * xf[i * cols + b];
+                    i = i + 1;
+                }
+                g[a * cols + b] = acc;
+                b = b + 1;
+            }
+            a = a + 1;
+        }
+        int64[] gsh = heap int64[2]; gsh[0] = cols; gsh[1] = cols;
+        Tensor<float64> gi = LinAlg.pinv<float64>(Tensor.of<float64>(g, gsh));
+
+        float64 s2 = ssr / (float64) (rows - cols);
+        float64[] tvals = heap float64[cols];
+        j = 0;
+        while (j < cols) {
+            float64 se = Math.sqrt(s2 * gi.flatGet(j * cols + j));
+            tvals[j] = beta[j] / se;
+            j = j + 1;
+        }
+
+        float64 n = (float64) rows;
+        float64 llf = -0.5 * n
+            * (Math.log(2.0 * 3.141592653589793) + Math.log(ssr / n) + 1.0);
+        Ols o = heap Ols(#beta, #tvals, #resid, ssr, llf, rows, cols);
+        return #o;
+    }
+}

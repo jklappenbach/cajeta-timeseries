@@ -1,0 +1,80 @@
+package dev.cajeta.timeseries;
+
+/**
+ * The result of a KPSS test.
+ *
+ * **THE NULL HYPOTHESIS IS STATIONARITY — the OPPOSITE of ADF** (spec
+ * §4.5, §10.5). A SMALL p-value here rejects stationarity, concluding
+ * the series is NON-stationary. {@link #isStationary} keeps the
+ * conclusion the right way round, so the two tests read identically at
+ * the call site even though their nulls are inverted.
+ *
+ * The p-value is interpolated from the KPSS critical-value table and is
+ * therefore CLAMPED to [0.01, 0.10] — statsmodels behaves identically
+ * (with an InterpolationWarning); {@link #pValueClamped} reports when
+ * the true p lies beyond the table.
+ */
+public final class KpssResult {
+
+    float64 stat;
+    float64 p;
+    int64 lagCount;
+    float64 c10;
+    float64 c5;
+    float64 c2p5;
+    float64 c1;
+
+    KpssResult(float64 stat, float64 p, int64 lagCount,
+               float64 c10, float64 c5, float64 c2p5, float64 c1) {
+        this.stat = stat;
+        this.p = p;
+        this.lagCount = lagCount;
+        this.c10 = c10;
+        this.c5 = c5;
+        this.c2p5 = c2p5;
+        this.c1 = c1;
+        return;
+    }
+
+    /** The KPSS LM statistic. */
+    public float64 statistic() { return this.stat; }
+
+    /**
+     * Interpolated p-value — **for the STATIONARITY null**: small means
+     * NON-stationary. Prefer {@link #isStationary}.
+     */
+    public float64 pValue() { return this.p; }
+
+    /** True when the statistic fell outside the interpolation table. */
+    public boolean pValueClamped() {
+        return this.p == 0.01 || this.p == 0.10;
+    }
+
+    /** The Newey-West/Bartlett lag count used for the variance. */
+    public int64 lags() { return this.lagCount; }
+
+    /** Critical value at 10%. */
+    public float64 crit10() { return this.c10; }
+
+    /** Critical value at 5%. */
+    public float64 crit5() { return this.c5; }
+
+    /** Critical value at 2.5%. */
+    public float64 crit2p5() { return this.c2p5; }
+
+    /** Critical value at 1%. */
+    public float64 crit1() { return this.c1; }
+
+    /**
+     * The conclusion, the right way round: true when stationarity is NOT
+     * rejected at `alpha`. Note the direction — KPSS *assumes*
+     * stationarity and looks for evidence against it.
+     */
+    public boolean isStationary(float64 alpha) { return this.p > alpha; }
+
+    /** The null hypothesis, spelled out. */
+    public #String nullHypothesis() {
+        return "H0: the series IS stationary; a small p-value rejects H0, "
+            + "concluding NON-stationary - the inverse of ADF";
+    }
+}

@@ -1,0 +1,127 @@
+package dev.cajeta.timeseries;
+
+/**
+ * The KPSS stationarity test (spec §10.5), matching statsmodels `kpss`
+ * with its default data-dependent bandwidth (`nlags="auto"`, Hobijn et
+ * al. 1998 under the Bartlett kernel): residuals from demeaning (`"c"`,
+ * level-stationarity) or a constant+trend regression (`"ct"`,
+ * trend-stationarity), the cumulative-sum LM statistic, a Newey-West
+ * long-run variance, and the p-value interpolated from the KPSS table.
+ *
+ * **The null is STATIONARITY — the opposite of ADF.** See
+ * {@link KpssResult}.
+ */
+public final class Kpss {
+
+    /** KPSS for level stationarity (`"c"`), auto bandwidth. */
+    public static #KpssResult test(Series s) { return Kpss.test(s, "c"); }
+
+    /** KPSS with regression `"c"` (level) or `"ct"` (trend). */
+    public static #KpssResult test(Series s, String regression) {
+        boolean ct = false;
+        if (regression.equals("c")) { ct = false; }
+        else if (regression.equals("ct")) { ct = true; }
+        else {
+            throw heap TsException("Kpss: regression must be \"c\" or "
+                + "\"ct\" (got \"" + regression + "\")");
+        }
+        int64 n = s.count();
+        if (s.hasMissing()) {
+            throw heap TsException("Kpss: the series has " + s.missingCount()
+                + " missing value(s) — the test does not impute");
+        }
+        float64[] x = heap float64[n];
+        int64 i = 0;
+        while (i < n) { x[i] = s.get(i); i = i + 1; }
+
+        float64[] resid = heap float64[n];
+        if (ct) {
+            // Residuals of x ~ [1, t] with t = 1..n.
+            float64[] xf = heap float64[n * 2];
+            i = 0;
+            while (i < n) {
+                xf[i * 2] = 1.0;
+                xf[i * 2 + 1] = (float64) (i + 1);
+                i = i + 1;
+            }
+            Ols o = Ols.fit(xf, n, (int64) 2, x);
+            i = 0;
+            while (i < n) { resid[i] = o.resid[i]; i = i + 1; }
+        } else {
+            float64 mean = 0.0;
+            i = 0;
+            while (i < n) { mean = mean + x[i]; i = i + 1; }
+            mean = mean / (float64) n;
+            i = 0;
+            while (i < n) { resid[i] = x[i] - mean; i = i + 1; }
+        }
+
+        // Hobijn et al. automatic bandwidth (Bartlett kernel).
+        int64 covlags = (int64) Math.pow((float64) n, 2.0 / 9.0);
+        float64 s0 = 0.0;
+        i = 0;
+        while (i < n) { s0 = s0 + resid[i] * resid[i]; i = i + 1; }
+        s0 = s0 / (float64) n;
+        float64 s1 = 0.0;
+        int64 k = 1;
+        while (k <= covlags) {
+            float64 prod = 0.0;
+            i = k;
+            while (i < n) { prod = prod + resid[i] * resid[i - k]; i = i + 1; }
+            prod = prod / ((float64) n / 2.0);
+            s0 = s0 + prod;
+            s1 = s1 + (float64) k * prod;
+            k = k + 1;
+        }
+        float64 sHat = s1 / s0;
+        float64 gammaHat = 1.1447 * Math.pow(sHat * sHat, 1.0 / 3.0);
+        int64 nlags = (int64) (gammaHat * Math.pow((float64) n, 1.0 / 3.0));
+        if (nlags > n - 1) { nlags = n - 1; }
+
+        // eta (eq. 11) and the Newey-West variance (eq. 10).
+        float64 eta = 0.0;
+        float64 cum = 0.0;
+        i = 0;
+        while (i < n) {
+            cum = cum + resid[i];
+            eta = eta + cum * cum;
+            i = i + 1;
+        }
+        eta = eta / ((float64) n * (float64) n);
+        float64 sh = 0.0;
+        i = 0;
+        while (i < n) { sh = sh + resid[i] * resid[i]; i = i + 1; }
+        k = 1;
+        while (k <= nlags) {
+            float64 prod = 0.0;
+            i = k;
+            while (i < n) { prod = prod + resid[i] * resid[i - k]; i = i + 1; }
+            sh = sh + 2.0 * prod * (1.0 - (float64) k / ((float64) nlags + 1.0));
+            k = k + 1;
+        }
+        sh = sh / (float64) n;
+        float64 stat = eta / sh;
+
+        // Interpolated p-value over the KPSS table (clamped at the ends).
+        float64[] crit = heap float64[4];
+        if (ct) {
+            crit[0] = 0.119; crit[1] = 0.146; crit[2] = 0.176; crit[3] = 0.216;
+        } else {
+            crit[0] = 0.347; crit[1] = 0.463; crit[2] = 0.574; crit[3] = 0.739;
+        }
+        float64[] pv = heap float64[4];
+        pv[0] = 0.10; pv[1] = 0.05; pv[2] = 0.025; pv[3] = 0.01;
+        float64 p = 0.0;
+        if (stat <= crit[0]) { p = pv[0]; }
+        else if (stat >= crit[3]) { p = pv[3]; }
+        else {
+            int64 j = 0;
+            while (stat > crit[j + 1]) { j = j + 1; }
+            float64 f = (stat - crit[j]) / (crit[j + 1] - crit[j]);
+            p = pv[j] + f * (pv[j + 1] - pv[j]);
+        }
+        KpssResult res = heap KpssResult(stat, p, nlags,
+            crit[0], crit[1], crit[2], crit[3]);
+        return #res;
+    }
+}

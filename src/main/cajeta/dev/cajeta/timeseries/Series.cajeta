@@ -270,6 +270,108 @@ public final class Series {
         return #s;
     }
 
+    /** First difference: `diff(t) = y(t) − y(t−1)` (§4.6). */
+    public #Series diff() { return this.diff((int64) 1); }
+
+    /**
+     * Difference to order `d` (§4.7): differencing applied `d` times, the
+     * series SHORTENS by `d` — leading values are dropped, never filled.
+     * The index starts `d` steps later. Missing values propagate (a NaN
+     * touches its two differences). `diff(0)` is the identity copy.
+     */
+    public #Series diff(int64 d) {
+        if (d < 0) {
+            throw heap TsException("Series.diff: d must be >= 0 (got "
+                + d + ")");
+        }
+        if (d >= this.n) {
+            throw heap TsException("Series.diff: order " + d + " consumes "
+                + "the whole series (n = " + this.n + ")");
+        }
+        int64 m = this.n;
+        float64[] a = heap float64[m];
+        int64 i = 0;
+        while (i < m) { a[i] = this.v[i]; i = i + 1; }
+        int64 k = 0;
+        while (k < d) {
+            i = 0;
+            while (i < m - 1) { a[i] = a[i + 1] - a[i]; i = i + 1; }
+            m = m - 1;
+            k = k + 1;
+        }
+        float64[] out = heap float64[m];
+        i = 0;
+        while (i < m) { out[i] = a[i]; i = i + 1; }
+        Series s = heap Series(#out, m, this.start + d * this.step,
+                               this.step);
+        return #s;
+    }
+
+    /**
+     * The `d` initial values inverse differencing needs (§4.8):
+     * `heads[j] = (Δʲy)(0)` — the first value of each successive
+     * difference level, retained BEFORE it is dropped.
+     */
+    public #float64[] diffHeads(int64 d) {
+        if (d < 1 || d >= this.n) {
+            throw heap TsException("Series.diffHeads: d must be in [1, n-1] "
+                + "(d = " + d + ", n = " + this.n + ")");
+        }
+        float64[] heads = heap float64[d];
+        int64 m = this.n;
+        float64[] a = heap float64[m];
+        int64 i = 0;
+        while (i < m) { a[i] = this.v[i]; i = i + 1; }
+        int64 j = 0;
+        while (j < d) {
+            heads[j] = a[0];
+            i = 0;
+            while (i < m - 1) { a[i] = a[i + 1] - a[i]; i = i + 1; }
+            m = m - 1;
+            j = j + 1;
+        }
+        return #heads;
+    }
+
+    /**
+     * Inverse differencing (§4.8): integrates a `d`-times-differenced
+     * series back to the original scale, given the `d` retained initial
+     * values from {@link #diffHeads}. Exact round trip:
+     * `Series.undiff(s.diff(d), s.diffHeads(d))` reproduces `s`.
+     */
+    public static #Series undiff(Series dd, float64[] heads) {
+        int64 d = (int64) heads.count();
+        if (d < 1) {
+            throw heap TsException("Series.undiff: heads must retain at "
+                + "least one initial value");
+        }
+        if (dd.hasMissing()) {
+            throw heap TsException("Series.undiff: the differenced series "
+                + "has missing values — integration would smear them");
+        }
+        int64 m = dd.n;
+        float64[] cur = heap float64[m + d];
+        int64 i = 0;
+        while (i < m) { cur[i] = dd.v[i]; i = i + 1; }
+        int64 j = d - 1;
+        while (j >= 0) {
+            // Prepend heads[j], then cumulative-sum in place.
+            int64 len = m;
+            i = len;
+            while (i > 0) { cur[i] = cur[i - 1]; i = i - 1; }
+            cur[0] = heads[j];
+            i = 1;
+            while (i <= len) { cur[i] = cur[i - 1] + cur[i]; i = i + 1; }
+            m = len + 1;
+            j = j - 1;
+        }
+        float64[] out = heap float64[m];
+        i = 0;
+        while (i < m) { out[i] = cur[i]; i = i + 1; }
+        Series s = heap Series(#out, m, dd.start - d * dd.step, dd.step);
+        return #s;
+    }
+
     // -- internals ---------------------------------------------------------
 
     static int64 checkedLength(Tensor<float64> values) {

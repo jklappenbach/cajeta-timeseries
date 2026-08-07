@@ -1,0 +1,204 @@
+package dev.cajeta.timeseries.selftest;
+
+import dev.cajeta.unit.Assert;
+import cajeta.math.Tensor;
+import dev.cajeta.timeseries.Adf;
+import dev.cajeta.timeseries.AdfResult;
+import dev.cajeta.timeseries.Kpss;
+import dev.cajeta.timeseries.KpssResult;
+import dev.cajeta.timeseries.Series;
+import dev.cajeta.timeseries.TsException;
+
+/**
+ * ml-timeseries U3 — stationarity against statsmodels 0.14.6: `adfuller`
+ * parity across lag-selection strategies (3.1.2–3.1.3) and all four
+ * regression forms (3.1.4), the unmistakable-null API shape (3.1.5,
+ * §11.6), the §4.6 differencing example as a test (3.1.6, §11.2),
+ * inverse differencing (3.1.7), `kpss` parity with the inverted null
+ * (3.1.8), and the random-walk/white-noise verdicts (3.1.9, §11.3).
+ */
+public class StationarityTest {
+
+    public StationarityTest() { return; }
+
+    // Fixture layout: [stat, pval, usedlag, nobs, crit1, crit5, crit10].
+    static void assertAdf(AdfResult r, String fixture) {
+        Tensor<float64> w = Fx.load(fixture);
+        Assert.isTrue(Fx.close(r.statistic(), w.flatGet((int64) 0), 0.00000001));
+        Assert.isTrue(Fx.close(r.pValue(), w.flatGet((int64) 1), 0.00000001));
+        Assert.equals(r.usedLag(), (int64) w.flatGet((int64) 2));
+        Assert.equals(r.nobs(), (int64) w.flatGet((int64) 3));
+        Assert.isTrue(Fx.close(r.crit1(), w.flatGet((int64) 4), 0.0000000001));
+        Assert.isTrue(Fx.close(r.crit5(), w.flatGet((int64) 5), 0.0000000001));
+        Assert.isTrue(Fx.close(r.crit10(), w.flatGet((int64) 6), 0.0000000001));
+        return;
+    }
+
+    // 3.1.1 + 3.1.2 — the default test (constant regression, AIC, Schwert
+    // maxLag) matches adfuller field for field on all three inputs.
+    @Test
+    public void adfDefaultsMatchStatsmodels() {
+        StationarityTest.assertAdf(
+            Adf.test(Series.of(Fx.load("ts_stat_wn"))), "ts_adf_wn_c_aic");
+        StationarityTest.assertAdf(
+            Adf.test(Series.of(Fx.load("ts_stat_rw"))), "ts_adf_rw_c_aic");
+        StationarityTest.assertAdf(
+            Adf.test(Series.of(Fx.load("ts_stat_trend"))), "ts_adf_trend_c_aic");
+        return;
+    }
+
+    // 3.1.3 — AIC, BIC, and t-statistic lag selection all match, as does
+    // a fixed lag with no selection at all.
+    @Test
+    public void adfLagSelectionStrategiesMatch() {
+        Series wn = Series.of(Fx.load("ts_stat_wn"));
+        StationarityTest.assertAdf(Adf.test(wn, "c", "bic"), "ts_adf_wn_c_bic");
+        StationarityTest.assertAdf(Adf.test(wn, "c", "tstat"), "ts_adf_wn_c_tstat");
+        StationarityTest.assertAdf(Adf.testFixed(wn, "c", (int64) 5),
+            "ts_adf_wn_c_fixed5");
+        return;
+    }
+
+    // 3.1.4 — all four regression forms match adfuller's `regression`.
+    @Test
+    public void adfRegressionFormsMatch() {
+        Series tr = Series.of(Fx.load("ts_stat_trend"));
+        StationarityTest.assertAdf(Adf.test(tr, "ct"), "ts_adf_trend_ct_aic");
+        StationarityTest.assertAdf(Adf.test(tr, "ctt"), "ts_adf_trend_ctt_aic");
+        Series rw = Series.of(Fx.load("ts_stat_rw"));
+        StationarityTest.assertAdf(Adf.test(rw, "n"), "ts_adf_rw_n_aic");
+        return;
+    }
+
+    // 3.1.5 + 3.1.9 + §11.6 — the null is unmistakable AS API SHAPE:
+    // conclusions come from isStationary(alpha), which reads the right
+    // way round for BOTH tests despite their inverted nulls; the
+    // spelled-out null names the inversion.
+    @Test
+    public void nullHypothesisIsUnmistakable() {
+        Series wn = Series.of(Fx.load("ts_stat_wn"));
+        Series rw = Series.of(Fx.load("ts_stat_rw"));
+
+        AdfResult aWn = Adf.test(wn);
+        AdfResult aRw = Adf.test(rw);
+        Assert.isTrue(aWn.isStationary(0.05));         // §11.3: white noise
+        Assert.isTrue(!aRw.isStationary(0.05));        // §11.3: random walk
+        Assert.isTrue(aWn.rejectsUnitRoot(0.05));
+        Assert.isTrue(aWn.nullHypothesis().contains("UNIT ROOT"));
+
+        KpssResult kWn = Kpss.test(wn);
+        KpssResult kRw = Kpss.test(rw);
+        Assert.isTrue(kWn.isStationary(0.05));         // same call, same read
+        Assert.isTrue(!kRw.isStationary(0.05));
+        Assert.isTrue(kWn.nullHypothesis().contains("IS stationary"));
+
+        // The two p-values run OPPOSITE ways on the same conclusion.
+        Assert.isTrue(aWn.pValue() < 0.05);            // ADF: small = stationary
+        Assert.isTrue(kWn.pValue() > 0.05);            // KPSS: large = stationary
+        return;
+    }
+
+    // 3.1.6 + §11.2 — the differencing example IS a test:
+    // [2,3,4,10,20] → [1,1,6,10] → [0,5,4]; leading values dropped, the
+    // series shortens by d, the index starts d steps later.
+    @Test
+    public void differencingWorkedExample() {
+        float64[] a = heap float64[5];
+        a[0] = 2.0; a[1] = 3.0; a[2] = 4.0; a[3] = 10.0; a[4] = 20.0;
+        int64[] sh = heap int64[1]; sh[0] = 5;
+        Series s = Series.of(Tensor.of<float64>(a, sh));
+
+        Series d1 = s.diff();
+        Assert.equals(d1.count(), (int64) 4);
+        Assert.isTrue(d1.get((int64) 0) == 1.0);
+        Assert.isTrue(d1.get((int64) 1) == 1.0);
+        Assert.isTrue(d1.get((int64) 2) == 6.0);
+        Assert.isTrue(d1.get((int64) 3) == 10.0);
+        Assert.equals(d1.indexAt((int64) 0), (int64) 1);
+
+        Series d2 = s.diff((int64) 2);
+        Assert.equals(d2.count(), (int64) 3);
+        Assert.isTrue(d2.get((int64) 0) == 0.0);
+        Assert.isTrue(d2.get((int64) 1) == 5.0);
+        Assert.isTrue(d2.get((int64) 2) == 4.0);
+        Assert.equals(d2.indexAt((int64) 0), (int64) 2);
+        return;
+    }
+
+    // 3.1.7 — inverse differencing recovers the original exactly, given
+    // the retained initial values (the §11.4 forecast path depends on it).
+    @Test
+    public void inverseDifferencingRoundTrips() {
+        Series s = Series.of(Fx.load("ts_stat_trend"));
+        int64 d = 2;
+        float64[] heads = s.diffHeads(d);
+        Series dd = s.diff(d);
+        Series back = Series.undiff(dd, heads);
+        Assert.equals(back.count(), s.count());
+        Assert.equals(back.indexAt((int64) 0), s.indexAt((int64) 0));
+        int64 i = 0;
+        while (i < s.count()) {
+            Assert.isTrue(Fx.close(back.get(i), s.get(i), 0.0000000001));
+            i = i + 1;
+        }
+        return;
+    }
+
+    // 3.1.8 — KPSS matches statsmodels (statistic, interpolated p-value,
+    // auto bandwidth, table critical values) for both regressions.
+    @Test
+    public void kpssMatchesStatsmodels() {
+        // Fixture layout: [stat, pval, lags, crit10, crit5, crit2.5, crit1].
+        Series wn = Series.of(Fx.load("ts_stat_wn"));
+        KpssResult k = Kpss.test(wn);
+        Tensor<float64> w = Fx.load("ts_kpss_wn_c");
+        Assert.isTrue(Fx.close(k.statistic(), w.flatGet((int64) 0), 0.00000001));
+        Assert.isTrue(Fx.close(k.pValue(), w.flatGet((int64) 1), 0.00000001));
+        Assert.equals(k.lags(), (int64) w.flatGet((int64) 2));
+        Assert.isTrue(k.crit10() == w.flatGet((int64) 3));
+        Assert.isTrue(k.crit1() == w.flatGet((int64) 6));
+
+        Series rw = Series.of(Fx.load("ts_stat_rw"));
+        KpssResult k2 = Kpss.test(rw);
+        Tensor<float64> w2 = Fx.load("ts_kpss_rw_c");
+        Assert.isTrue(Fx.close(k2.statistic(), w2.flatGet((int64) 0), 0.00000001));
+        Assert.isTrue(Fx.close(k2.pValue(), w2.flatGet((int64) 1), 0.00000001));
+        Assert.isTrue(k2.pValueClamped());             // rw is off the table
+
+        Series tr = Series.of(Fx.load("ts_stat_trend"));
+        KpssResult k3 = Kpss.test(tr, "ct");
+        Tensor<float64> w3 = Fx.load("ts_kpss_trend_ct");
+        Assert.isTrue(Fx.close(k3.statistic(), w3.flatGet((int64) 0), 0.00000001));
+        Assert.isTrue(Fx.close(k3.pValue(), w3.flatGet((int64) 1), 0.00000001));
+        Assert.equals(k3.lags(), (int64) w3.flatGet((int64) 2));
+        return;
+    }
+
+    // Misuse is loud: constant series, bad regression names, bad autolag.
+    @Test
+    public void misuseIsLoud() {
+        float64[] c = heap float64[20];
+        int64 i = 0;
+        while (i < 20) { c[i] = 3.0; i = i + 1; }
+        int64[] sh = heap int64[1]; sh[0] = 20;
+        Series cs = Series.of(Tensor.of<float64>(c, sh));
+        boolean threw = false;
+        try {
+            AdfResult r = Adf.test(cs);
+        } catch (TsException ex) { threw = true; }
+        Assert.isTrue(threw);
+
+        Series wn = Series.of(Fx.load("ts_stat_wn"));
+        threw = false;
+        try {
+            AdfResult r2 = Adf.test(wn, "zz");
+        } catch (TsException ex) { threw = true; }
+        Assert.isTrue(threw);
+        threw = false;
+        try {
+            KpssResult r3 = Kpss.test(wn, "ctt");
+        } catch (TsException ex) { threw = true; }
+        Assert.isTrue(threw);
+        return;
+    }
+}

@@ -1,0 +1,88 @@
+package dev.cajeta.timeseries;
+
+import cajeta.math.stats.Stats;
+
+/**
+ * MacKinnon's response-surface approximations for the ADF tau
+ * distribution, N = 1 (single series): approximate p-values from
+ * MacKinnon (1994) and finite-sample critical values from MacKinnon
+ * (2010) — the exact constants statsmodels 0.14.6 ships in
+ * `statsmodels/tsa/adfvalues.py`, transliterated for the four regression
+ * forms `n`, `c`, `ct`, `ctt`. Package-private: `Adf` is the surface.
+ */
+final class MacKinnon {
+
+    static int64 regIndex(String regression) {
+        if (regression.equals("n")) { return 0; }
+        if (regression.equals("c")) { return 1; }
+        if (regression.equals("ct")) { return 2; }
+        if (regression.equals("ctt")) { return 3; }
+        throw heap TsException("ADF: regression must be one of "
+            + "\"c\", \"ct\", \"ctt\", \"n\" (got \"" + regression + "\")");
+    }
+
+    /**
+     * MacKinnon (1994) approximate p-value: outside [min, max] the tail
+     * saturates; below tau* the small-p cubic applies, above it the
+     * large-p cubic; either way p = Φ(polynomial(stat)).
+     */
+    static float64 pValue(float64 stat, String regression) {
+        int64 r = MacKinnon.regIndex(regression);
+        // tau_max: the "n" entry is +inf in statsmodels.
+        float64[] tmax = heap float64[4];
+        tmax[0] = 1.0 / 0.0; tmax[1] = 2.74; tmax[2] = 0.7; tmax[3] = 0.54;
+        float64[] tmin = heap float64[4];
+        tmin[0] = -19.04; tmin[1] = -18.83; tmin[2] = -16.18; tmin[3] = -17.17;
+        float64[] tstar = heap float64[4];
+        tstar[0] = -1.04; tstar[1] = -1.61; tstar[2] = -2.89; tstar[3] = -3.21;
+        if (stat > tmax[r]) { return 1.0; }
+        if (stat < tmin[r]) { return 0.0; }
+
+        // Cubic coefficients [c0, c1, c2(, c3)] with statsmodels' scaling
+        // already applied (small: [1,1,1e-2]; large: [1,1e-1,1e-1,1e-2]).
+        float64 c0 = 0.0; float64 c1 = 0.0; float64 c2 = 0.0; float64 c3 = 0.0;
+        if (stat <= tstar[r]) {
+            if (r == 0) { c0 = 0.6344; c1 = 1.2378; c2 = 0.032496; }
+            else if (r == 1) { c0 = 2.1659; c1 = 1.4412; c2 = 0.038269; }
+            else if (r == 2) { c0 = 3.2512; c1 = 1.6047; c2 = 0.049588; }
+            else { c0 = 4.0003; c1 = 1.658; c2 = 0.048288; }
+            c3 = 0.0;
+        } else {
+            if (r == 0) { c0 = 0.4797; c1 = 0.93557; c2 = -0.06999; c3 = 0.033066; }
+            else if (r == 1) { c0 = 1.7339; c1 = 0.93202; c2 = -0.12745; c3 = -0.010368; }
+            else if (r == 2) { c0 = 2.5261; c1 = 0.61654; c2 = -0.37956; c3 = -0.060285; }
+            else { c0 = 3.0778; c1 = 0.49529; c2 = -0.41477; c3 = -0.059359; }
+        }
+        float64 v = c0 + stat * (c1 + stat * (c2 + stat * c3));
+        return Stats.normalCdf(v);
+    }
+
+    /**
+     * MacKinnon (2010) finite-sample critical value at `level` (1, 5, or
+     * 10 percent): the response surface `c0 + c1/T + c2/T² + c3/T³`
+     * evaluated at the regression's nobs.
+     */
+    static float64 crit(String regression, int64 level, int64 nobs) {
+        int64 r = MacKinnon.regIndex(regression);
+        float64 c0 = 0.0; float64 c1 = 0.0; float64 c2 = 0.0; float64 c3 = 0.0;
+        if (r == 0) {
+            if (level == 1) { c0 = -2.56574; c1 = -2.2358; c2 = -3.627; c3 = 0.0; }
+            else if (level == 5) { c0 = -1.94100; c1 = -0.2686; c2 = -3.365; c3 = 31.223; }
+            else { c0 = -1.61682; c1 = 0.2656; c2 = -2.714; c3 = 25.364; }
+        } else if (r == 1) {
+            if (level == 1) { c0 = -3.43035; c1 = -6.5393; c2 = -16.786; c3 = -79.433; }
+            else if (level == 5) { c0 = -2.86154; c1 = -2.8903; c2 = -4.234; c3 = -40.040; }
+            else { c0 = -2.56677; c1 = -1.5384; c2 = -2.809; c3 = 0.0; }
+        } else if (r == 2) {
+            if (level == 1) { c0 = -3.95877; c1 = -9.0531; c2 = -28.428; c3 = -134.155; }
+            else if (level == 5) { c0 = -3.41049; c1 = -4.3904; c2 = -9.036; c3 = -45.374; }
+            else { c0 = -3.12705; c1 = -2.5856; c2 = -3.925; c3 = -22.380; }
+        } else {
+            if (level == 1) { c0 = -4.37113; c1 = -11.5882; c2 = -35.819; c3 = -334.047; }
+            else if (level == 5) { c0 = -3.83239; c1 = -5.9057; c2 = -12.490; c3 = -118.284; }
+            else { c0 = -3.55326; c1 = -3.6596; c2 = -5.293; c3 = -63.559; }
+        }
+        float64 u = 1.0 / (float64) nobs;
+        return c0 + u * (c1 + u * (c2 + u * c3));
+    }
+}
