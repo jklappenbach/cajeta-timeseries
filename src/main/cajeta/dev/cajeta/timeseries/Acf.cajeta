@@ -1,0 +1,139 @@
+package dev.cajeta.timeseries;
+
+import cajeta.math.Tensor;
+import cajeta.math.fft.Fft;
+
+/**
+ * The autocorrelation function (spec §6), matching statsmodels `acf`:
+ * biased (`n` denominators, the default) or adjusted (`n−k`, §6.4)
+ * autocovariance, computed directly or through `cajeta.math.fft`
+ * (§6.5 — same result within float tolerance), with Bartlett's
+ * lag-widening confidence band (the `bartlett_confint` default, §6.3)
+ * or the naive constant band.
+ *
+ * See {@link AcfResult} for the §6.8 reading rule. The FFT path rides
+ * the stdlib's float32 transform, so it agrees with the direct float64
+ * path to ~1e-5 — fine for a correlogram, and recorded in
+ * `DifferencesFromStatsmodels.md`.
+ */
+public final class Acf {
+
+    /** The statsmodels defaults: biased, direct, Bartlett band, α 0.05. */
+    public static #AcfResult compute(Series s, int64 nlags) {
+        return Acf.compute(s, nlags, false, false, true, 0.05);
+    }
+
+    /** Full-control ACF (adjusted §6.4, FFT §6.5, band choice §6.3). */
+    public static #AcfResult compute(Series s, int64 nlags,
+                                     boolean adjusted, boolean useFft,
+                                     boolean bartlett, float64 alpha) {
+        int64 n = s.count();
+        if (nlags < 1 || nlags >= n) {
+            throw heap TsException("Acf: nlags must be in [1, n-1] (nlags = "
+                + nlags + ", n = " + n + ")");
+        }
+        if (s.hasMissing()) {
+            throw heap TsException("Acf: the series has " + s.missingCount()
+                + " missing value(s) — drop or repair them first");
+        }
+        float64[] acov = Acf.acovf(s, nlags, adjusted, useFft);
+        float64[] r = heap float64[nlags + 1];
+        int64 k = 0;
+        while (k <= nlags) { r[k] = acov[k] / acov[0]; k = k + 1; }
+
+        float64 z = Norm.ppf(1.0 - alpha / 2.0);
+        float64[] lo = heap float64[nlags + 1];
+        float64[] hi = heap float64[nlags + 1];
+        if (bartlett) {
+            // varacf[0] = 0, varacf[1] = 1/n,
+            // varacf[k] = (1 + 2·Σ_{j<k} r_j²)/n for k ≥ 2.
+            float64 cum = 0.0;
+            k = 0;
+            while (k <= nlags) {
+                float64 varacf;
+                if (k == 0) { varacf = 0.0; }
+                else if (k == 1) { varacf = 1.0 / (float64) n; }
+                else {
+                    cum = cum + r[k - 1] * r[k - 1];
+                    varacf = (1.0 + 2.0 * cum) / (float64) n;
+                }
+                float64 iv = z * Math.sqrt(varacf);
+                lo[k] = r[k] - iv;
+                hi[k] = r[k] + iv;
+                k = k + 1;
+            }
+        } else {
+            float64 iv = z * Math.sqrt(1.0 / (float64) n);
+            k = 0;
+            while (k <= nlags) {
+                lo[k] = r[k] - iv;
+                hi[k] = r[k] + iv;
+                k = k + 1;
+            }
+        }
+        AcfResult res = heap AcfResult(#r, #lo, #hi);
+        return #res;
+    }
+
+    /** Demeaned autocovariance for lags `0..nlags`. */
+    static #float64[] acovf(Series s, int64 nlags, boolean adjusted,
+                            boolean useFft) {
+        int64 n = s.count();
+        float64 mean = 0.0;
+        int64 i = 0;
+        while (i < n) { mean = mean + s.get(i); i = i + 1; }
+        mean = mean / (float64) n;
+
+        float64[] acov = heap float64[nlags + 1];
+        if (useFft) {
+            // Zero-padded power-of-two length ≥ 2n, interleaved complex.
+            int64 m = 1;
+            while (m < 2 * n + 1) { m = m * 2; }
+            float64[] buf = heap float64[m * 2];
+            i = 0;
+            while (i < n) {
+                buf[i * 2] = s.get(i) - mean;
+                i = i + 1;
+            }
+            float32[] b32 = heap float32[m * 2];
+            i = 0;
+            while (i < m * 2) { b32[i] = (float32) buf[i]; i = i + 1; }
+            int64[] sh = heap int64[1]; sh[0] = m * 2;
+            Tensor<float32> f = Fft.fft(Tensor.of<float32>(b32, sh));
+            float32[] p32 = heap float32[m * 2];
+            i = 0;
+            while (i < m) {
+                float32 re = f.flatGet(i * 2);
+                float32 im = f.flatGet(i * 2 + 1);
+                p32[i * 2] = re * re + im * im;
+                p32[i * 2 + 1] = 0.0f;
+                i = i + 1;
+            }
+            Tensor<float32> back = Fft.ifft(Tensor.of<float32>(p32, sh));
+            int64 k = 0;
+            while (k <= nlags) {
+                float64 d;
+                if (adjusted) { d = (float64) (n - k); }
+                else { d = (float64) n; }
+                acov[k] = (float64) back.flatGet(k * 2) / d;
+                k = k + 1;
+            }
+        } else {
+            int64 k = 0;
+            while (k <= nlags) {
+                float64 acc = 0.0;
+                i = k;
+                while (i < n) {
+                    acc = acc + (s.get(i) - mean) * (s.get(i - k) - mean);
+                    i = i + 1;
+                }
+                float64 d;
+                if (adjusted) { d = (float64) (n - k); }
+                else { d = (float64) n; }
+                acov[k] = acc / d;
+                k = k + 1;
+            }
+        }
+        return #acov;
+    }
+}

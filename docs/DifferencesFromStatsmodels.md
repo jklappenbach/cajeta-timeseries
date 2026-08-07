@@ -22,3 +22,19 @@ they are made. An empty section means "verbatim parity so far".
   from statsmodels so much as from the `dev.cajeta.ml` conventions:
   `trainTestSplit`'s shuffle is deliberately unreachable from this
   library's types (spec §11.5).
+
+## Correlograms (spec §6)
+
+- **The FFT autocovariance path rides the stdlib's float32 transform**
+  (`cajeta.math.fft` has no float64 FFT yet), so `Acf.compute(...,
+  useFft: true)` agrees with the direct float64 path to ~1e-5 rather
+  than 1e-15. The direct path is the default and is what the parity
+  fixtures pin; the §6.5 same-result test asserts the two paths agree to
+  1e-4. When the stdlib grows a float64 FFT the tolerance tightens for
+  free.
+- **PACF's default here is `"ywm"`** (spec §6.7's naming); statsmodels'
+  own default is `"ywadjusted"`, which is also available and pinned.
+- **`chi2` and the normal quantile are internal transliterations** —
+  `cajeta.math.stats` lacks `gammainc`/`chi2Cdf` and an inverse normal
+  CDF; both are implemented package-private (Ljung-Box p-values,
+  confidence bands) and are registered as stdlib gaps.

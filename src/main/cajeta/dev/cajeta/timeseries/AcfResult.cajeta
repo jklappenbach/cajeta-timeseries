@@ -1,0 +1,63 @@
+package dev.cajeta.timeseries;
+
+/**
+ * A correlogram (spec §6): autocorrelations for lags `0..nlags` (lag 0
+ * exactly 1) with the confidence interval at each lag.
+ *
+ * **Reading rule (§6.8):** the last lag whose value falls OUTSIDE the
+ * band suggests the MA order `q` (from the ACF) or the AR order `p`
+ * (from the PACF); lag 0 is ignored. With Bartlett bands the interval
+ * WIDENS with lag — a value that clears the lag-1 band may sit inside
+ * the lag-10 band, which is exactly why the naive constant band
+ * over-identifies structure at long lags.
+ */
+public final class AcfResult {
+
+    float64[] r;
+    float64[] lo;
+    float64[] hi;
+
+    AcfResult(#float64[] r, #float64[] lo, #float64[] hi) {
+        this.r #= r;
+        this.lo #= lo;
+        this.hi #= hi;
+        return;
+    }
+
+    /** Number of lags (excluding lag 0). */
+    public int64 nlags() { return (int64) this.r.count() - 1; }
+
+    /** The autocorrelation at lag `k` (`value(0) == 1`). */
+    public float64 value(int64 k) { return this.r[k]; }
+
+    /** Lower confidence bound at lag `k` (centred on the value). */
+    public float64 confLow(int64 k) { return this.lo[k]; }
+
+    /** Upper confidence bound at lag `k` (centred on the value). */
+    public float64 confHigh(int64 k) { return this.hi[k]; }
+
+    /** The band HALF-WIDTH at lag `k` — the plot band is ±this about 0. */
+    public float64 interval(int64 k) { return this.hi[k] - this.r[k]; }
+
+    /** True when lag `k`'s value clears its band (significant). */
+    public boolean significant(int64 k) {
+        float64 v = this.r[k];
+        if (v < 0.0) { v = -v; }
+        return v > this.interval(k);
+    }
+
+    /**
+     * The §6.8 suggestion: the LAST significant lag (lags ≥ 1). From an
+     * ACF this suggests `q`; from a PACF it suggests `p`. Zero when
+     * nothing clears the band.
+     */
+    public int64 lastSignificantLag() {
+        int64 last = 0;
+        int64 k = 1;
+        while (k <= this.nlags()) {
+            if (this.significant(k)) { last = k; }
+            k = k + 1;
+        }
+        return last;
+    }
+}

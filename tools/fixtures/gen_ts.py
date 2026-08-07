@@ -164,11 +164,60 @@ def gen_diagnostics():
     save("ts_lb_ar1", np.column_stack([lb2["lb_stat"], lb2["lb_pvalue"]]))
 
 
+def gen_correlograms():
+    """U5 — ACF/PACF (spec §6).
+
+    ACF values (biased and adjusted), Bartlett and constant confidence
+    intervals at alpha 0.05, and PACF by ywm / ywadjusted / ols / ldb, all
+    on the U4 AR(1) fixture. Plus AR(2) and MA(2) identification series
+    (n = 1000, seeded) whose cutoff behaviour is verified HERE before the
+    fixture is trusted (plan 5.1.7).
+    """
+    from statsmodels.tsa.stattools import acf, pacf
+
+    ar1 = np.load(f"{OUT}/ts_diag_ar1.npy")
+    r, confint = acf(ar1, nlags=20, alpha=0.05, fft=True)
+    save("ts_acf_ar1", r)
+    save("ts_acf_ar1_confint", confint)
+    r2, confint2 = acf(ar1, nlags=20, alpha=0.05, fft=True,
+                       bartlett_confint=False)
+    save("ts_acf_ar1_confint_const", confint2)
+    save("ts_acf_ar1_adj", acf(ar1, nlags=20, adjusted=True, fft=False))
+    save("ts_pacf_ar1_ywm", pacf(ar1, nlags=20, method="ywm"))
+    save("ts_pacf_ar1_ywa", pacf(ar1, nlags=20, method="ywadjusted"))
+    save("ts_pacf_ar1_ols", pacf(ar1, nlags=20, method="ols"))
+    save("ts_pacf_ar1_ldb", pacf(ar1, nlags=20, method="ldb"))
+
+    n = 1000
+    rng = np.random.default_rng(31)
+    e = rng.normal(0.0, 1.0, n + 2)
+    ar2 = np.zeros(n + 2)
+    for i in range(2, n + 2):
+        ar2[i] = 0.6 * ar2[i - 1] - 0.3 * ar2[i - 2] + e[i]
+    ar2 = ar2[2:]
+    ma2 = e[2:] + 0.7 * e[1:-1] + 0.4 * e[:-2]
+    save("ts_ident_ar2", ar2)
+    save("ts_ident_ma2", ma2)
+
+    # Trust-but-verify the identification property before saving it as a
+    # claim: PACF(AR2) outside the band at 1..2 and inside at 3..6; ACF
+    # (MA2) outside at 1..2 and inside at 3..6 (Bartlett band).
+    band = 1.959963984540054 / np.sqrt(n)
+    p = pacf(ar2, nlags=6, method="ywm")
+    assert all(abs(p[k]) > band for k in (1, 2)), p
+    assert all(abs(p[k]) < band for k in (3, 4, 5, 6)), p
+    a, ci = acf(ma2, nlags=6, alpha=0.05, fft=True)
+    half = ci[:, 1] - a
+    assert all(abs(a[k]) > half[k] for k in (1, 2)), a
+    assert all(abs(a[k]) < half[k] for k in (3, 4, 5, 6)), a
+
+
 def main():
     print(f"statsmodels {statsmodels.__version__} fixtures -> {OUT}")
     gen_decompose()
     gen_stationarity()
     gen_diagnostics()
+    gen_correlograms()
 
 
 if __name__ == "__main__":

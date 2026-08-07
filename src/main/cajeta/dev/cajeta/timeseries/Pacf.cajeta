@@ -1,0 +1,205 @@
+package dev.cajeta.timeseries;
+
+import cajeta.math.Tensor;
+import cajeta.math.linalg.LinAlg;
+
+/**
+ * The partial autocorrelation function (spec §6.6–§6.7), matching
+ * statsmodels `pacf` for three method families:
+ *
+ * - `"ywm"` (the default here, spec §6.7): Yule-Walker on the biased
+ *   (MLE, `n`-denominator) autocovariance — a Toeplitz solve per lag.
+ * - `"ywadjusted"`: Yule-Walker with `n−k` denominators.
+ * - `"ols"`: for each `k`, the regression of the series on a constant
+ *   and its lags `1..k` over the full available sample; the PACF at `k`
+ *   is the last coefficient.
+ * - `"ldb"`: Levinson-Durbin recursion on the biased autocovariance.
+ *
+ * The result is an {@link AcfResult} whose band is the constant
+ * `±z/√n` — the standard PACF band (Bartlett's formula is an ACF
+ * construction). Lag 0 is 1 and is ignored by the §6.8 reading rule:
+ * the last significant lag suggests the AR order `p`.
+ */
+public final class Pacf {
+
+    /** PACF by Yule-Walker MLE (`ywm`), α 0.05. */
+    public static #AcfResult compute(Series s, int64 nlags) {
+        return Pacf.compute(s, nlags, "ywm", 0.05);
+    }
+
+    /** PACF by the named method, α 0.05. */
+    public static #AcfResult compute(Series s, int64 nlags, String method) {
+        return Pacf.compute(s, nlags, method, 0.05);
+    }
+
+    /** PACF by `"ywm"`, `"ywadjusted"`, `"ols"`, or `"ldb"`. */
+    public static #AcfResult compute(Series s, int64 nlags, String method,
+                                     float64 alpha) {
+        int64 n = s.count();
+        if (nlags < 1 || nlags > n / 2) {
+            throw heap TsException("Pacf: nlags must be in [1, n/2] (nlags = "
+                + nlags + ", n = " + n + ")");
+        }
+        if (s.hasMissing()) {
+            throw heap TsException("Pacf: the series has " + s.missingCount()
+                + " missing value(s) — drop or repair them first");
+        }
+        float64[] p = null;
+        if (method.equals("ywm")) {
+            p = Pacf.yw(s, nlags, false);
+        } else if (method.equals("ywadjusted")) {
+            p = Pacf.yw(s, nlags, true);
+        } else if (method.equals("ols")) {
+            p = Pacf.ols(s, nlags);
+        } else if (method.equals("ldb")) {
+            p = Pacf.ld(s, nlags);
+        } else {
+            throw heap TsException("Pacf: method must be \"ywm\", "
+                + "\"ywadjusted\", \"ols\", or \"ldb\" (got \"" + method
+                + "\")");
+        }
+        float64 iv = Norm.ppf(1.0 - alpha / 2.0)
+            / Math.sqrt((float64) n);
+        float64[] lo = heap float64[nlags + 1];
+        float64[] hi = heap float64[nlags + 1];
+        int64 k = 0;
+        while (k <= nlags) {
+            lo[k] = p[k] - iv;
+            hi[k] = p[k] + iv;
+            k = k + 1;
+        }
+        AcfResult res = heap AcfResult(#p, #lo, #hi);
+        return #res;
+    }
+
+    /** Yule-Walker per lag: solve the k×k Toeplitz system, take φₖₖ. */
+    static #float64[] yw(Series s, int64 nlags, boolean adjusted) {
+        int64 n = s.count();
+        float64 mean = 0.0;
+        int64 i = 0;
+        while (i < n) { mean = mean + s.get(i); i = i + 1; }
+        mean = mean / (float64) n;
+        float64[] r = heap float64[nlags + 1];
+        int64 k = 0;
+        while (k <= nlags) {
+            float64 acc = 0.0;
+            i = k;
+            while (i < n) {
+                acc = acc + (s.get(i) - mean) * (s.get(i - k) - mean);
+                i = i + 1;
+            }
+            float64 d;
+            if (adjusted) { d = (float64) (n - k); }
+            else { d = (float64) n; }
+            r[k] = acc / d;
+            k = k + 1;
+        }
+        float64[] p = heap float64[nlags + 1];
+        p[0] = 1.0;
+        k = 1;
+        while (k <= nlags) {
+            float64[] m = heap float64[k * k];
+            float64[] rhs = heap float64[k];
+            int64 a = 0;
+            while (a < k) {
+                int64 b = 0;
+                while (b < k) {
+                    int64 dd = a - b;
+                    if (dd < 0) { dd = -dd; }
+                    m[a * k + b] = r[dd];
+                    b = b + 1;
+                }
+                rhs[a] = r[a + 1];
+                a = a + 1;
+            }
+            int64[] msh = heap int64[2]; msh[0] = k; msh[1] = k;
+            int64[] vsh = heap int64[1]; vsh[0] = k;
+            Tensor<float64> sol = LinAlg.solve<float64>(
+                Tensor.of<float64>(m, msh), Tensor.of<float64>(rhs, vsh));
+            p[k] = sol.flatGet(k - 1);
+            k = k + 1;
+        }
+        return #p;
+    }
+
+    /** OLS: constant + lags 1..k over rows k..n-1; last coefficient. */
+    static #float64[] ols(Series s, int64 nlags) {
+        int64 n = s.count();
+        float64[] p = heap float64[nlags + 1];
+        p[0] = 1.0;
+        int64 k = 1;
+        while (k <= nlags) {
+            int64 rows = n - k;
+            int64 cols = k + 1;
+            float64[] xf = heap float64[rows * cols];
+            float64[] yv = heap float64[rows];
+            int64 t = k;
+            while (t < n) {
+                int64 row = t - k;
+                xf[row * cols] = 1.0;
+                int64 j = 1;
+                while (j <= k) {
+                    xf[row * cols + j] = s.get(t - j);
+                    j = j + 1;
+                }
+                yv[row] = s.get(t);
+                t = t + 1;
+            }
+            Ols o = Ols.fit(xf, rows, cols, yv);
+            p[k] = o.beta[cols - 1];
+            k = k + 1;
+        }
+        return #p;
+    }
+
+    /** Levinson-Durbin on the biased autocovariance: the φₖₖ diagonal. */
+    static #float64[] ld(Series s, int64 nlags) {
+        int64 n = s.count();
+        float64 mean = 0.0;
+        int64 i = 0;
+        while (i < n) { mean = mean + s.get(i); i = i + 1; }
+        mean = mean / (float64) n;
+        float64[] r = heap float64[nlags + 1];
+        int64 k = 0;
+        while (k <= nlags) {
+            float64 acc = 0.0;
+            i = k;
+            while (i < n) {
+                acc = acc + (s.get(i) - mean) * (s.get(i - k) - mean);
+                i = i + 1;
+            }
+            r[k] = acc / (float64) n;
+            k = k + 1;
+        }
+        // phi[j][k] recursion, sig[k] the innovation variance.
+        float64[] phi = heap float64[(nlags + 1) * (nlags + 1)];
+        float64[] sig = heap float64[nlags + 1];
+        float64[] p = heap float64[nlags + 1];
+        p[0] = 1.0;
+        int64 w = nlags + 1;
+        phi[1 * w + 1] = r[1] / r[0];
+        sig[1] = r[0] - phi[1 * w + 1] * r[1];
+        p[1] = phi[1 * w + 1];
+        k = 2;
+        while (k <= nlags) {
+            float64 acc = r[k];
+            int64 j = 1;
+            while (j < k) {
+                acc = acc - phi[j * w + (k - 1)] * r[k - j];
+                j = j + 1;
+            }
+            float64 pkk = acc / sig[k - 1];
+            phi[k * w + k] = pkk;
+            j = 1;
+            while (j < k) {
+                phi[j * w + k] = phi[j * w + (k - 1)]
+                    - pkk * phi[(k - j) * w + (k - 1)];
+                j = j + 1;
+            }
+            sig[k] = sig[k - 1] * (1.0 - pkk * pkk);
+            p[k] = pkk;
+            k = k + 1;
+        }
+        return #p;
+    }
+}
