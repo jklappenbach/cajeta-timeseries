@@ -1,0 +1,123 @@
+package dev.cajeta.timeseries.selftest;
+
+import dev.cajeta.unit.Assert;
+import cajeta.math.Tensor;
+import dev.cajeta.timeseries.Forecaster;
+import dev.cajeta.timeseries.MovingAverage;
+import dev.cajeta.timeseries.MovingAverageForecaster;
+import dev.cajeta.timeseries.Series;
+import dev.cajeta.timeseries.TsException;
+
+/**
+ * ml-timeseries U6 — moving averages: hand-computed windows (6.1.1),
+ * weight order that would look plausible backwards (6.1.2), loud
+ * rejection of bad weights and oversized windows (6.1.3–6.1.4), and the
+ * baseline forecaster U7 must beat (6.1.5).
+ */
+public class MovingAverageTest {
+
+    public MovingAverageTest() { return; }
+
+    static #Series s5() {
+        float64[] a = heap float64[5];
+        a[0] = 10.0; a[1] = 20.0; a[2] = 30.0; a[3] = 40.0; a[4] = 50.0;
+        int64[] sh = heap int64[1]; sh[0] = 5;
+        return Series.of(Tensor.of<float64>(a, sh));
+    }
+
+    // 6.1.1 — trailing and centred windows against hand computation, with
+    // the warm-up explicit as missing.
+    @Test
+    public void simpleWindowsHandComputed() {
+        Series s = MovingAverageTest.s5();
+        Series t3 = MovingAverage.simple(s, (int64) 3);
+        Assert.isTrue(t3.isMissing((int64) 0));
+        Assert.isTrue(t3.isMissing((int64) 1));
+        Assert.isTrue(t3.get((int64) 2) == 20.0);      // (10+20+30)/3
+        Assert.isTrue(t3.get((int64) 3) == 30.0);
+        Assert.isTrue(t3.get((int64) 4) == 40.0);
+
+        Series c3 = MovingAverage.simple(s, (int64) 3, true);
+        Assert.isTrue(c3.isMissing((int64) 0));
+        Assert.isTrue(c3.get((int64) 1) == 20.0);      // (10+20+30)/3
+        Assert.isTrue(c3.get((int64) 3) == 40.0);
+        Assert.isTrue(c3.isMissing((int64) 4));
+
+        // A centred EVEN window is ambiguous here — Decompose owns it.
+        boolean threw = false;
+        try {
+            Series c4 = MovingAverage.simple(s, (int64) 4, true);
+        } catch (TsException ex) { threw = true; }
+        Assert.isTrue(threw);
+        return;
+    }
+
+    // 6.1.2 — the weight order is chronological: weights[0] hits the
+    // OLDEST window value. Get it backwards and the numbers still look
+    // plausible — which is exactly why this is pinned.
+    @Test
+    public void weightedOrderIsChronological() {
+        Series s = MovingAverageTest.s5();
+        float64[] w = heap float64[3];
+        w[0] = 0.2; w[1] = 0.3; w[2] = 0.5;            // most weight recent
+        Series r = MovingAverage.weighted(s, w);
+        Assert.isTrue(r.isMissing((int64) 1));
+        // t=2: 0.2·10 + 0.3·20 + 0.5·30 = 23 (backwards would give 17).
+        Assert.isTrue(Fx.close(r.get((int64) 2), 23.0, 0.000000000001));
+        Assert.isTrue(Fx.close(r.get((int64) 4), 43.0, 0.000000000001));
+        return;
+    }
+
+    // 6.1.3 + 6.1.4 — weights that do not sum to 1 and windows longer
+    // than the series are rejected, not silently accommodated.
+    @Test
+    public void validationIsLoud() {
+        Series s = MovingAverageTest.s5();
+        float64[] bad = heap float64[2];
+        bad[0] = 0.5; bad[1] = 0.6;
+        boolean threw = false;
+        try {
+            Series r = MovingAverage.weighted(s, bad);
+        } catch (TsException ex) { threw = true; }
+        Assert.isTrue(threw);
+
+        threw = false;
+        try {
+            Series r2 = MovingAverage.simple(s, (int64) 6);
+        } catch (TsException ex) { threw = true; }
+        Assert.isTrue(threw);
+
+        threw = false;
+        try {
+            MovingAverageForecaster f = heap MovingAverageForecaster((int64) 6);
+            f.fit(s);
+        } catch (TsException ex) { threw = true; }
+        Assert.isTrue(threw);
+        return;
+    }
+
+    // 6.1.5 — the baseline forecaster: flat at the last-window mean, the
+    // index continues the series, and the horizon is explicit. It
+    // conforms to the Forecaster seam U7's models share, so U8 can
+    // compare anything against it.
+    @Test
+    public void baselineForecaster() {
+        Series s = MovingAverageTest.s5();
+        Forecaster f = heap MovingAverageForecaster((int64) 2);
+        f.fit(s);
+        Series fc = f.forecast((int64) 3);
+        Assert.equals(fc.count(), (int64) 3);
+        Assert.isTrue(fc.get((int64) 0) == 45.0);      // (40+50)/2
+        Assert.isTrue(fc.get((int64) 2) == 45.0);      // flat
+        Assert.equals(fc.indexAt((int64) 0), (int64) 5);
+        Assert.equals(fc.indexAt((int64) 2), (int64) 7);
+
+        boolean threw = false;
+        try {
+            Forecaster g = heap MovingAverageForecaster((int64) 2);
+            Series bad = g.forecast((int64) 1);
+        } catch (TsException ex) { threw = true; }
+        Assert.isTrue(threw);
+        return;
+    }
+}

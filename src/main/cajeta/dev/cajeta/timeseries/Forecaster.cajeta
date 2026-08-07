@@ -1,0 +1,24 @@
+package dev.cajeta.timeseries;
+
+/**
+ * The forecasting contract (spec §8.9, §9): fit on a series, then
+ * forecast `h` steps past its end, in the ORIGINAL scale, with the
+ * horizon explicit at the call site.
+ *
+ * This is deliberately NOT `dev.cajeta.ml.Predictor`: a forecaster has
+ * no `predict(x)` over unseen rows — its "features" are the series' own
+ * past. Where the estimator protocol genuinely fits it is conformed to;
+ * where it cannot, this narrower contract says so in the type rather
+ * than via a method that throws (spec §8.9).
+ */
+public interface Forecaster {
+
+    /** Fit the model to `s`. */
+    void fit(Series s);
+
+    /**
+     * Forecast `h` steps beyond the fitted series' last observation.
+     * The result's index continues the fitted series' index.
+     */
+    #Series forecast(int64 h);
+}

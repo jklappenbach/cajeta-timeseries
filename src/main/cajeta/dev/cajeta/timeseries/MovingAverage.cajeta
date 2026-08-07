@@ -1,0 +1,109 @@
+package dev.cajeta.timeseries;
+
+import cajeta.math.Tensor;
+
+/**
+ * Simple and weighted moving averages (spec §7).
+ *
+ * - **Trailing** (the default): position `t` averages the window ENDING
+ *   at `t` (`y(t−w+1) .. y(t)`); the first `w−1` positions are MISSING —
+ *   the length is unchanged and the warm-up is explicit.
+ * - **Centred**: position `t` averages the symmetric window around `t`
+ *   (odd `w` only — for the even-window seasonal-trend case use
+ *   {@link Decompose}, whose half-weight endpoint filter is the right
+ *   tool); `(w−1)/2` missing at each end.
+ * - **Weighted**: weights are applied in CHRONOLOGICAL order —
+ *   `weights[0]` multiplies the OLDEST value in the window and
+ *   `weights[w−1]` the most recent. Weights must sum to 1 (§7.2).
+ *
+ * A window longer than the series is rejected (§7.3). Missing values
+ * propagate: any window touching a missing value yields missing.
+ */
+public final class MovingAverage {
+
+    /** Trailing simple moving average of window `w`. */
+    public static #Series simple(Series s, int64 w) {
+        return MovingAverage.simple(s, w, false);
+    }
+
+    /** Simple moving average, trailing or centred (odd `w`). */
+    public static #Series simple(Series s, int64 w, boolean centred) {
+        MovingAverage.checkWindow(s, w);
+        if (centred && w % 2 == 0) {
+            throw heap TsException("MovingAverage: a centred window must be "
+                + "odd (got " + w + "); for the even seasonal-trend window "
+                + "use Decompose, whose half-weight filter handles it");
+        }
+        int64 n = s.count();
+        float64[] out = heap float64[n];
+        int64 t = 0;
+        while (t < n) {
+            int64 lo;
+            if (centred) { lo = t - (w - 1) / 2; }
+            else { lo = t - w + 1; }
+            int64 hi = lo + w;
+            if (lo < 0 || hi > n) {
+                out[t] = Series.missing();
+            } else {
+                float64 acc = 0.0;
+                int64 i = lo;
+                while (i < hi) { acc = acc + s.get(i); i = i + 1; }
+                out[t] = acc / (float64) w;
+            }
+            t = t + 1;
+        }
+        return MovingAverage.wrap(s, out);
+    }
+
+    /** Trailing weighted moving average; weights in chronological order. */
+    public static #Series weighted(Series s, float64[] weights) {
+        int64 w = (int64) weights.count();
+        MovingAverage.checkWindow(s, w);
+        float64 sum = 0.0;
+        int64 j = 0;
+        while (j < w) { sum = sum + weights[j]; j = j + 1; }
+        float64 d = sum - 1.0;
+        if (d < 0.0) { d = -d; }
+        if (d > 0.000000000001) {
+            throw heap TsException("MovingAverage.weighted: weights sum to "
+                + sum + ", not 1 — normalize them explicitly (spec 7.2)");
+        }
+        int64 n = s.count();
+        float64[] out = heap float64[n];
+        int64 t = 0;
+        while (t < n) {
+            if (t < w - 1) {
+                out[t] = Series.missing();
+            } else {
+                float64 acc = 0.0;
+                j = 0;
+                while (j < w) {
+                    acc = acc + weights[j] * s.get(t - w + 1 + j);
+                    j = j + 1;
+                }
+                out[t] = acc;
+            }
+            t = t + 1;
+        }
+        return MovingAverage.wrap(s, out);
+    }
+
+    static void checkWindow(Series s, int64 w) {
+        if (w < 1) {
+            throw heap TsException("MovingAverage: window must be >= 1 "
+                + "(got " + w + ")");
+        }
+        if (w > s.count()) {
+            throw heap TsException("MovingAverage: window " + w + " exceeds "
+                + "the series length " + s.count() + " — rejected rather "
+                + "than returning an empty series (spec 7.3)");
+        }
+        return;
+    }
+
+    static #Series wrap(Series s, float64[] out) {
+        int64 n = s.count();
+        int64[] sh = heap int64[1]; sh[0] = n;
+        return Series.of(Tensor.of<float64>(out, sh), s.index());
+    }
+}

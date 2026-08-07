@@ -1,0 +1,70 @@
+package dev.cajeta.timeseries;
+
+import cajeta.math.Tensor;
+
+/**
+ * The naive moving-average forecaster (spec §7.4): every step ahead is
+ * the mean of the last `window` observations at the forecast origin.
+ * Deliberately trivial — it is the BASELINE every model in §8 must
+ * beat, and §9's comparisons need it to exist first (a claimed
+ * improvement over nothing is not a measurement).
+ */
+public final class MovingAverageForecaster implements Forecaster {
+
+    int64 window;
+    float64 level;
+    int64 lastIndex;
+    int64 step;
+    boolean fitted;
+
+    public MovingAverageForecaster(int64 window) {
+        if (window < 1) {
+            throw heap TsException("MovingAverageForecaster: window must "
+                + "be >= 1 (got " + window + ")");
+        }
+        this.window = window;
+        this.fitted = false;
+        return;
+    }
+
+    public void fit(Series s) {
+        if (this.window > s.count()) {
+            throw heap TsException("MovingAverageForecaster: window "
+                + this.window + " exceeds the series length " + s.count());
+        }
+        if (s.hasMissing()) {
+            throw heap TsException("MovingAverageForecaster: the series "
+                + "has missing values");
+        }
+        int64 n = s.count();
+        float64 acc = 0.0;
+        int64 i = n - this.window;
+        while (i < n) { acc = acc + s.get(i); i = i + 1; }
+        this.level = acc / (float64) this.window;
+        this.lastIndex = s.indexAt(n - 1);
+        this.step = s.indexStep();
+        this.fitted = true;
+        return;
+    }
+
+    public #Series forecast(int64 h) {
+        if (!this.fitted) {
+            throw heap TsException("MovingAverageForecaster: forecast "
+                + "before fit");
+        }
+        if (h < 1) {
+            throw heap TsException("MovingAverageForecaster: the horizon "
+                + "must be >= 1 (got " + h + ")");
+        }
+        float64[] out = heap float64[h];
+        int64[] idx = heap int64[h];
+        int64 i = 0;
+        while (i < h) {
+            out[i] = this.level;
+            idx[i] = this.lastIndex + (i + 1) * this.step;
+            i = i + 1;
+        }
+        int64[] sh = heap int64[1]; sh[0] = h;
+        return Series.of(Tensor.of<float64>(out, sh), idx);
+    }
+}
