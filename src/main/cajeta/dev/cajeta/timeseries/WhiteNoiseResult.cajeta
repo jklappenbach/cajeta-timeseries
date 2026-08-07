@@ -1,0 +1,68 @@
+package dev.cajeta.timeseries;
+
+/**
+ * The three-condition white-noise diagnostic (spec §5.1): mean ≈ 0,
+ * constant variance over time, and no significant autocorrelation — with
+ * the verdict PER CONDITION, because "not white noise" is useless
+ * without knowing which way the series fails. A pass on **model
+ * residuals** is the documented way to judge that a model captured the
+ * structure (§5.2).
+ */
+public final class WhiteNoiseResult {
+
+    float64 pM;
+    float64 pV;
+    float64 pA;
+    float64 a;
+
+    WhiteNoiseResult(float64 pM, float64 pV, float64 pA, float64 a) {
+        this.pM = pM;
+        this.pV = pV;
+        this.pA = pA;
+        this.a = a;
+        return;
+    }
+
+    /** Mean-zero z-test p-value. */
+    public float64 pMean() { return this.pM; }
+
+    /** Constant-variance (two-halves log-F z-test) p-value. */
+    public float64 pVariance() { return this.pV; }
+
+    /** Ljung-Box joint p-value at the tested lag depth. */
+    public float64 pAutocorrelation() { return this.pA; }
+
+    /** The significance level the verdicts use. */
+    public float64 alpha() { return this.a; }
+
+    /** True when the mean is compatible with zero. */
+    public boolean meanOk() { return this.pM >= this.a; }
+
+    /** True when the variance is compatible with constancy. */
+    public boolean varianceOk() { return this.pV >= this.a; }
+
+    /** True when no significant autocorrelation was found. */
+    public boolean autocorrelationOk() { return this.pA >= this.a; }
+
+    /** All three conditions hold. */
+    public boolean isWhiteNoise() {
+        return this.meanOk() && this.varianceOk()
+            && this.autocorrelationOk();
+    }
+
+    /** The failed conditions by name, or "none". */
+    public #String failedConditions() {
+        String out = "";
+        if (!this.meanOk()) { out = out + "mean"; }
+        if (!this.varianceOk()) {
+            if (!out.equals("")) { out = out + ","; }
+            out = out + "variance";
+        }
+        if (!this.autocorrelationOk()) {
+            if (!out.equals("")) { out = out + ","; }
+            out = out + "autocorrelation";
+        }
+        if (out.equals("")) { return "none"; }
+        return #out;
+    }
+}

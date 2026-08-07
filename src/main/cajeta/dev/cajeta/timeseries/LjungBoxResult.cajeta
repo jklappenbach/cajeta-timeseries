@@ -1,0 +1,40 @@
+package dev.cajeta.timeseries;
+
+/**
+ * The Ljung-Box portmanteau test per lag (spec §5.3): at each lag `h`
+ * the statistic `Q(h) = n(n+2)·Σ_{k≤h} ρ̂ₖ²/(n−k)` and its chi-square
+ * p-value with `h` degrees of freedom, matching statsmodels
+ * `acorr_ljungbox`. The null is NO autocorrelation up to that lag — a
+ * small p-value at any lag means the series remembers its past.
+ */
+public final class LjungBoxResult {
+
+    float64[] q;
+    float64[] p;
+
+    LjungBoxResult(#float64[] q, #float64[] p) {
+        this.q #= q;
+        this.p #= p;
+        return;
+    }
+
+    /** Number of lags tested. */
+    public int64 lags() { return (int64) this.q.count(); }
+
+    /** Q statistic at lag `h` (1-based). */
+    public float64 statistic(int64 h) { return this.q[h - 1]; }
+
+    /** p-value at lag `h` (1-based) — small rejects "no autocorrelation". */
+    public float64 pValue(int64 h) { return this.p[h - 1]; }
+
+    /** The smallest p-value across all tested lags. */
+    public float64 minPValue() {
+        float64 m = this.p[0];
+        int64 i = 1;
+        while (i < (int64) this.p.count()) {
+            if (this.p[i] < m) { m = this.p[i]; }
+            i = i + 1;
+        }
+        return m;
+    }
+}

@@ -1,0 +1,182 @@
+package dev.cajeta.timeseries;
+
+import cajeta.math.Tensor;
+import cajeta.math.random.Generator;
+import cajeta.math.stats.Stats;
+
+/**
+ * White-noise and random-walk diagnostics (spec §5) — run these BEFORE
+ * modelling: an unpredictable series is detected here for the cost of a
+ * few tests, not discovered after a modelling effort fails.
+ *
+ * - {@link #ljungBox}: the portmanteau test, matching statsmodels
+ *   `acorr_ljungbox` (biased-denominator ACF, χ² p-values).
+ * - {@link #whiteNoise}: the three-condition diagnostic with
+ *   per-condition reporting; its autocorrelation condition is the joint
+ *   Ljung-Box at the deepest tested lag.
+ * - {@link #detectRandomWalk}: unit root not rejected + uncorrelated
+ *   increments.
+ * - {@link #randomWalk}: a seeded generated walk, for testing that the
+ *   diagnostics actually fire (§5.4).
+ */
+public final class Diagnostics {
+
+    /** Ljung-Box up to `min(10, n/5)` lags. */
+    public static #LjungBoxResult ljungBox(Series s) {
+        int64 h = s.count() / 5;
+        if (h > 10) { h = 10; }
+        if (h < 1) { h = 1; }
+        return Diagnostics.ljungBox(s, h);
+    }
+
+    /** Ljung-Box up to `lags` lags (spec §5.3). */
+    public static #LjungBoxResult ljungBox(Series s, int64 lags) {
+        int64 n = s.count();
+        if (lags < 1 || lags >= n) {
+            throw heap TsException("ljungBox: lags must be in [1, n-1] "
+                + "(lags = " + lags + ", n = " + n + ")");
+        }
+        if (s.hasMissing()) {
+            throw heap TsException("ljungBox: the series has "
+                + s.missingCount() + " missing value(s)");
+        }
+        float64 mean = 0.0;
+        int64 i = 0;
+        while (i < n) { mean = mean + s.get(i); i = i + 1; }
+        mean = mean / (float64) n;
+        float64 c0 = 0.0;
+        i = 0;
+        while (i < n) {
+            float64 d = s.get(i) - mean;
+            c0 = c0 + d * d;
+            i = i + 1;
+        }
+        float64[] q = heap float64[lags];
+        float64[] p = heap float64[lags];
+        float64 acc = 0.0;
+        int64 k = 1;
+        while (k <= lags) {
+            float64 ck = 0.0;
+            i = k;
+            while (i < n) {
+                ck = ck + (s.get(i) - mean) * (s.get(i - k) - mean);
+                i = i + 1;
+            }
+            float64 rho = ck / c0;
+            acc = acc + rho * rho / (float64) (n - k);
+            q[k - 1] = (float64) n * ((float64) n + 2.0) * acc;
+            p[k - 1] = Gamma.chi2Sf(q[k - 1], (float64) k);
+            k = k + 1;
+        }
+        LjungBoxResult r = heap LjungBoxResult(#q, #p);
+        return #r;
+    }
+
+    /** The three-condition white-noise test at alpha 0.05. */
+    public static #WhiteNoiseResult whiteNoise(Series s) {
+        return Diagnostics.whiteNoise(s, 0.05);
+    }
+
+    /**
+     * The three-condition white-noise test (spec §5.1): a mean-zero
+     * z-test, a two-halves variance-constancy test (normal approximation
+     * of the log variance ratio), and the joint Ljung-Box at
+     * `min(10, n/5)` lags. Each condition reports its own p-value.
+     */
+    public static #WhiteNoiseResult whiteNoise(Series s, float64 alpha) {
+        int64 n = s.count();
+        if (n < 8) {
+            throw heap TsException("whiteNoise: needs at least 8 "
+                + "observations (n = " + n + ")");
+        }
+        if (s.hasMissing()) {
+            throw heap TsException("whiteNoise: the series has "
+                + s.missingCount() + " missing value(s)");
+        }
+        // Mean ≈ 0: z = mean / (s/√n), two-sided.
+        float64 mean = 0.0;
+        int64 i = 0;
+        while (i < n) { mean = mean + s.get(i); i = i + 1; }
+        mean = mean / (float64) n;
+        float64 ss = 0.0;
+        i = 0;
+        while (i < n) {
+            float64 d = s.get(i) - mean;
+            ss = ss + d * d;
+            i = i + 1;
+        }
+        float64 sd = Math.sqrt(ss / (float64) (n - 1));
+        float64 z = mean / (sd / Math.sqrt((float64) n));
+        if (z < 0.0) { z = -z; }
+        float64 pMean = 2.0 * (1.0 - Stats.normalCdf(z));
+
+        // Constant variance: halves' log variance ratio,
+        // Var(log s²) ≈ 2/(m−1) per half.
+        int64 h = n / 2;
+        float64 v1 = Diagnostics.segVar(s, (int64) 0, h);
+        float64 v2 = Diagnostics.segVar(s, h, n);
+        float64 zl = Math.log(v1 / v2)
+            / Math.sqrt(2.0 / (float64) (h - 1)
+                        + 2.0 / (float64) (n - h - 1));
+        if (zl < 0.0) { zl = -zl; }
+        float64 pVar = 2.0 * (1.0 - Stats.normalCdf(zl));
+
+        // No autocorrelation: joint Ljung-Box at the deepest lag.
+        LjungBoxResult lb = Diagnostics.ljungBox(s);
+        float64 pAc = lb.pValue(lb.lags());
+
+        WhiteNoiseResult r = heap WhiteNoiseResult(pMean, pVar, pAc, alpha);
+        return #r;
+    }
+
+    static float64 segVar(Series s, int64 lo, int64 hi) {
+        float64 m = 0.0;
+        int64 i = lo;
+        while (i < hi) { m = m + s.get(i); i = i + 1; }
+        m = m / (float64) (hi - lo);
+        float64 ss = 0.0;
+        i = lo;
+        while (i < hi) {
+            float64 d = s.get(i) - m;
+            ss = ss + d * d;
+            i = i + 1;
+        }
+        return ss / (float64) (hi - lo - 1);
+    }
+
+    /**
+     * Random-walk detection (spec §5.5): the ADF test fails to reject
+     * the unit root AND the increments pass Ljung-Box.
+     */
+    public static #RandomWalkResult detectRandomWalk(Series s) {
+        AdfResult adf = Adf.test(s);
+        LjungBoxResult lb = Diagnostics.ljungBox(s.diff());
+        float64 lbP = lb.pValue(lb.lags());
+        boolean rw = !adf.isStationary(0.05) && lbP >= 0.05;
+        RandomWalkResult r = heap RandomWalkResult(rw, adf.pValue(), lbP);
+        return #r;
+    }
+
+    /**
+     * A seeded random walk `y(t) = y(t−1) + ε(t)` with standard-normal
+     * increments (spec §5.4) — reproducible, for testing that the
+     * diagnostics fire.
+     */
+    public static #Series randomWalk(uint64 seed, int64 n) {
+        if (n < 2) {
+            throw heap TsException("randomWalk: n must be >= 2");
+        }
+        Generator g = heap Generator(seed);
+        Tensor<float32> e = g.normal(n);
+        float64[] a = heap float64[n];
+        float64 acc = 0.0;
+        int64 i = 0;
+        while (i < n) {
+            acc = acc + (float64) e.flatGet(i);
+            a[i] = acc;
+            i = i + 1;
+        }
+        int64[] sh = heap int64[1]; sh[0] = n;
+        return Series.of(Tensor.of<float64>(a, sh));
+    }
+}

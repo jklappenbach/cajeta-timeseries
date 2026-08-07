@@ -1,0 +1,76 @@
+package dev.cajeta.timeseries;
+
+import cajeta.math.stats.Stats;
+
+/**
+ * The regularized lower incomplete gamma function P(a, x) and the
+ * chi-square CDF built on it — the Ljung-Box p-value needs `chi2.sf`,
+ * which the stdlib's `cajeta.math.stats` does not yet expose (it has
+ * `gammaLn`/`betainc` but no `gammainc`; the gap is registered for
+ * stdlib promotion). Series expansion below `a+1`, Lentz continued
+ * fraction above — the standard pair, converging to ~1e-15.
+ * PACKAGE-PRIVATE until the stdlib grows the real one.
+ */
+final class Gamma {
+
+    /** Regularized lower incomplete gamma P(a, x). */
+    static float64 p(float64 a, float64 x) {
+        if (a <= 0.0 || x < 0.0) {
+            throw heap TsException("Gamma.p: requires a > 0, x >= 0 (a = "
+                + a + ", x = " + x + ")");
+        }
+        if (x == 0.0) { return 0.0; }
+        float64 lnPre = -x + a * Math.log(x) - Stats.gammaLn(a);
+        if (x < a + 1.0) {
+            // Series: P = e^lnPre · Σ x^k / (a·(a+1)···(a+k)).
+            float64 ap = a;
+            float64 del = 1.0 / a;
+            float64 sum = del;
+            int64 i = 0;
+            while (i < 500) {
+                ap = ap + 1.0;
+                del = del * x / ap;
+                sum = sum + del;
+                float64 ad = del; if (ad < 0.0) { ad = -ad; }
+                float64 as = sum; if (as < 0.0) { as = -as; }
+                if (ad < as * 0.000000000000001) { i = 500; }
+                i = i + 1;
+            }
+            return sum * Math.exp(lnPre);
+        }
+        // Continued fraction (modified Lentz) for Q, then P = 1 - Q.
+        float64 tiny = 0.00000000000000000000000000000001;
+        float64 b = x + 1.0 - a;
+        float64 c = 1.0 / tiny;
+        float64 d = 1.0 / b;
+        float64 h = d;
+        int64 i2 = 1;
+        while (i2 <= 500) {
+            float64 an = -(float64) i2 * ((float64) i2 - a);
+            b = b + 2.0;
+            d = an * d + b;
+            float64 adv = d; if (adv < 0.0) { adv = -adv; }
+            if (adv < tiny) { d = tiny; }
+            c = b + an / c;
+            float64 acv = c; if (acv < 0.0) { acv = -acv; }
+            if (acv < tiny) { c = tiny; }
+            d = 1.0 / d;
+            float64 del = d * c;
+            h = h * del;
+            float64 dd = del - 1.0; if (dd < 0.0) { dd = -dd; }
+            if (dd < 0.000000000000001) { i2 = 501; }
+            i2 = i2 + 1;
+        }
+        return 1.0 - Math.exp(lnPre) * h;
+    }
+
+    /** Chi-square CDF with `df` degrees of freedom. */
+    static float64 chi2Cdf(float64 x, float64 df) {
+        return Gamma.p(df / 2.0, x / 2.0);
+    }
+
+    /** Chi-square survival function (1 − CDF). */
+    static float64 chi2Sf(float64 x, float64 df) {
+        return 1.0 - Gamma.chi2Cdf(x, df);
+    }
+}

@@ -131,10 +131,44 @@ def gen_stationarity():
     kp("ts_kpss_trend_ct", trend, "ct")
 
 
+def gen_diagnostics():
+    """U4 — white-noise/random-walk diagnostics (spec §5).
+
+    One fixture per white-noise failure mode (plan 4.1.2): an AR(1)
+    series (fails autocorrelation only) and a heteroscedastic series
+    (fails variance only); white noise and the trending series already
+    exist from U3. Ljung-Box statistic+p per lag from acorr_ljungbox for
+    the §5.3 parity claim.
+    """
+    from statsmodels.stats.diagnostic import acorr_ljungbox
+
+    n = 200
+    rng = np.random.default_rng(11)
+    e = rng.normal(0.0, 1.0, n)
+    ar1 = np.empty(n)
+    ar1[0] = e[0]
+    for i in range(1, n):
+        ar1[i] = 0.7 * ar1[i - 1] + e[i]
+    save("ts_diag_ar1", ar1)
+
+    het = np.concatenate([
+        np.random.default_rng(12).normal(0.0, 1.0, n // 2),
+        np.random.default_rng(13).normal(0.0, 3.0, n // 2),
+    ])
+    save("ts_diag_hetero", het)
+
+    wn = np.load(f"{OUT}/ts_stat_wn.npy")
+    lb = acorr_ljungbox(wn, lags=10)
+    save("ts_lb_wn", np.column_stack([lb["lb_stat"], lb["lb_pvalue"]]))
+    lb2 = acorr_ljungbox(ar1, lags=10)
+    save("ts_lb_ar1", np.column_stack([lb2["lb_stat"], lb2["lb_pvalue"]]))
+
+
 def main():
     print(f"statsmodels {statsmodels.__version__} fixtures -> {OUT}")
     gen_decompose()
     gen_stationarity()
+    gen_diagnostics()
 
 
 if __name__ == "__main__":

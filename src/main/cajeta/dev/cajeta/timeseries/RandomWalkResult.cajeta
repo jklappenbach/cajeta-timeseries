@@ -1,0 +1,49 @@
+package dev.cajeta.timeseries;
+
+/**
+ * Random-walk detection (spec §5.4–§5.5): a series walks randomly when
+ * the ADF test FAILS TO REJECT its unit root AND the increments (first
+ * difference) show no significant autocorrelation. The two p-values are
+ * exposed so the verdict is auditable, and {@link #verdict} says it in
+ * the domain's terms.
+ */
+public final class RandomWalkResult {
+
+    boolean rw;
+    float64 adfP;
+    float64 lbP;
+
+    RandomWalkResult(boolean rw, float64 adfP, float64 lbP) {
+        this.rw = rw;
+        this.adfP = adfP;
+        this.lbP = lbP;
+        return;
+    }
+
+    /** True when the series is consistent with a random walk. */
+    public boolean isRandomWalk() { return this.rw; }
+
+    /** The ADF p-value (unit-root null). */
+    public float64 adfPValue() { return this.adfP; }
+
+    /** Ljung-Box joint p-value on the increments. */
+    public float64 incrementsPValue() { return this.lbP; }
+
+    /** The verdict, in the domain's terms. */
+    public #String verdict() {
+        if (this.rw) {
+            return "consistent with a random walk: the ADF test fails to "
+                + "reject the unit root (p = " + this.adfP + ") and the "
+                + "increments show no significant autocorrelation (p = "
+                + this.lbP + ") - the series is not usefully forecastable "
+                + "beyond its last value";
+        }
+        if (this.adfP < 0.05) {
+            return "not a random walk: the ADF test rejects the unit root "
+                + "(p = " + this.adfP + ")";
+        }
+        return "not a simple random walk: the unit root stands (ADF p = "
+            + this.adfP + ") but the increments are autocorrelated (p = "
+            + this.lbP + ") - structure remains for a model";
+    }
+}
