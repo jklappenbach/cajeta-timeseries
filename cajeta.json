@@ -19,7 +19,7 @@
 
     "details": {
         "name":               "dev.cajeta.timeseries",
-        "version":            "0.1.0",
+        "version":            "0.1.1",
         "description":        "cajeta-timeseries — classical time series: decomposition, stationarity, correlograms, and the ARIMA family with lookahead-proof evaluation",
         "license":            "Apache-2.0",
         "authors":            ["Julian Klappenbach"],

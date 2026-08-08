@@ -18,7 +18,7 @@ package dev.cajeta.timeseries;
  */
 public final class Timeseries {
     /** The library version. */
-    public static #String version() { return "0.1.0"; }
+    public static #String version() { return "0.1.1"; }
 
     /** `--emit=cja` entry. */
     public static int32 run() { return 0; }
