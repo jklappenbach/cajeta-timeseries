@@ -35,7 +35,7 @@
         // stdlib (cajeta.math incl. linalg/fft/stats/optim, cajeta.nucleo)
         // is built into the toolchain — not declared.
         "dependencies": {
-            "dev.cajeta.ml": "0.9.0"
+            "dev.cajeta.ml": "0.10.0"
         },
 
         // The suite is driven by cajeta-unit's reflective @Test discovery;
