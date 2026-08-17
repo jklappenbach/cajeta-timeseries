@@ -101,7 +101,7 @@ final class ArmaNll implements Objective {
         float64[] raw = heap float64[this.q];
         int64 i = 0;
         while (i < this.q) { raw[i] = x.flatGet(off + i); i = i + 1; }
-        float64[] c = ArmaNll.constrain(raw, (int64) 0, this.q);
+        float64[] c #= ArmaNll.constrain(raw, (int64) 0, this.q);
         // Invertibility of 1+θ₁B+… ⇔ stationarity of the −θ polynomial.
         i = 0;
         while (i < this.q) { c[i] = -c[i]; i = i + 1; }
@@ -115,18 +115,18 @@ final class ArmaNll implements Objective {
 
     /** σ̂² at the given parameters (the concentrated scale). */
     float64 sigma2At(Tensor<float64> x) {
-        float64[] out = this.filter(x);
+        float64[] out #= this.filter(x);
         return out[1];
     }
 
     /** The FULL log-likelihood at the parameters (σ² at its MLE). */
     float64 llfAt(Tensor<float64> x) {
-        float64[] out = this.filter(x);
+        float64[] out #= this.filter(x);
         return -out[0];
     }
 
     public float64 value(Tensor<float64> x) {
-        float64[] out = this.filter(x);
+        float64[] out #= this.filter(x);
         return out[0];
     }
 
@@ -136,8 +136,8 @@ final class ArmaNll implements Objective {
         int64 q = this.q;
         int64 m = p;
         if (q + 1 > m) { m = q + 1; }
-        float64[] phi = this.phiOf(x);
-        float64[] th = this.thetaOf(x);
+        float64[] phi #= this.phiOf(x);
+        float64[] th #= this.thetaOf(x);
         float64 mu = this.muOf(x);
 
         // T (m×m): first column φ (padded), superdiagonal identity.
@@ -184,7 +184,7 @@ final class ArmaNll implements Objective {
         }
         int64[] ash = heap int64[2]; ash[0] = mm; ash[1] = mm;
         int64[] bsh = heap int64[1]; bsh[0] = mm;
-        Tensor<float64> pv = LinAlg.solve<float64>(
+        Tensor<float64> pv #= LinAlg.solve<float64>(
             Tensor.of<float64>(am, ash), Tensor.of<float64>(bv, bsh));
         float64[] pm = heap float64[mm];
         i = 0;

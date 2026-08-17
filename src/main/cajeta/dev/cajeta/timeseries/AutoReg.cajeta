@@ -120,7 +120,7 @@ public final class AutoReg implements Forecaster {
             yv[r] = s.get(t);
             t = t + 1;
         }
-        Ols o = Ols.fit(xf, rows, cols, yv);
+        Ols o #= Ols.fit(xf, rows, cols, yv);
         float64[] b = heap float64[cols];
         float64[] e = heap float64[cols];
         // statsmodels AutoReg reports MLE standard errors (σ² = SSR/n);
@@ -195,7 +195,7 @@ public final class AutoReg implements Forecaster {
     }
 
     public #Series forecast(int64 h) {
-        ForecastResult f = this.forecastInterval(h, 0.05);
+        ForecastResult f #= this.forecastInterval(h, 0.05);
         Series m = f.mean;
         return Series.of(m.values(), m.index());
     }
@@ -264,9 +264,9 @@ public final class AutoReg implements Forecaster {
             i = i + 1;
         }
         int64[] sh = heap int64[1]; sh[0] = h;
-        Series ms = Series.of(Tensor.of<float64>(mean, sh), idx);
-        Series ls = Series.of(Tensor.of<float64>(lo, sh), idx);
-        Series hs = Series.of(Tensor.of<float64>(hi, sh), idx);
+        Series ms #= Series.of(Tensor.of<float64>(mean, sh), idx);
+        Series ls #= Series.of(Tensor.of<float64>(lo, sh), idx);
+        Series hs #= Series.of(Tensor.of<float64>(hi, sh), idx);
         ForecastResult fr = heap ForecastResult(#ms, #ls, #hs, alpha);
         return #fr;
     }

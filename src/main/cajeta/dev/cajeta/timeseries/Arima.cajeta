@@ -115,13 +115,13 @@ public final class Arima implements Forecaster {
         this.step = s.indexStep();
 
         // Hannan-Rissanen start.
-        float64[] x0 = this.hannanRissanen(z, n);
+        float64[] x0 #= this.hannanRissanen(z, n);
 
         ArmaNll nll = heap ArmaNll(#z, this.p, this.q, this.withMean);
         int64 dim = (int64) x0.count();
         int64[] xsh = heap int64[1]; xsh[0] = dim;
-        Tensor<float64> x0t = Tensor.of<float64>(x0, xsh);
-        OptimResult r = NelderMead.minimize(nll, x0t, (int32) 20000);
+        Tensor<float64> x0t #= Tensor.of<float64>(x0, xsh);
+        OptimResult r #= NelderMead.minimize(nll, x0t, (int32) 20000);
 
         this.mu = nll.muOf(r.x);
         this.phi #= nll.phiOf(r.x);
@@ -169,14 +169,14 @@ public final class Arima implements Forecaster {
         float64[] th0 = heap float64[this.q];
         if (this.q == 0) {
             // Pure AR: OLS on the lags directly.
-            Ols o = this.lagOls(zc, n, this.p, null, (int64) 0);
+            Ols o #= this.lagOls(zc, n, this.p, null, (int64) 0);
             i = 0;
             while (i < this.p) { phi0[i] = o.beta[i]; i = i + 1; }
         } else {
             // Stage 1: long AR for residuals; stage 2: OLS on lags + ê.
             int64 lag = 10 + maxpq;
             if (lag > n / 4) { lag = n / 4; }
-            Ols l = this.lagOls(zc, n, lag, null, (int64) 0);
+            Ols l #= this.lagOls(zc, n, lag, null, (int64) 0);
             float64[] eh = heap float64[n];
             int64 t = lag;
             while (t < n) {
@@ -189,17 +189,17 @@ public final class Arima implements Forecaster {
                 eh[t] = zc[t] - fitv;
                 t = t + 1;
             }
-            Ols o = this.lagOls(zc, n, this.p, eh, this.q);
+            Ols o #= this.lagOls(zc, n, this.p, eh, this.q);
             i = 0;
             while (i < this.p) { phi0[i] = o.beta[i]; i = i + 1; }
             i = 0;
             while (i < this.q) { th0[i] = o.beta[this.p + i]; i = i + 1; }
         }
         // To the unconstrained space (θ negated: see ArmaNll.thetaOf).
-        float64[] xphi = ArmaNll.unconstrain(phi0, this.p);
+        float64[] xphi #= ArmaNll.unconstrain(phi0, this.p);
         i = 0;
         while (i < this.q) { th0[i] = -th0[i]; i = i + 1; }
-        float64[] xth = ArmaNll.unconstrain(th0, this.q);
+        float64[] xth #= ArmaNll.unconstrain(th0, this.q);
         int64 off = 0;
         if (this.withMean) { off = 1; }
         float64[] x0 = heap float64[off + this.p + this.q];
@@ -297,7 +297,7 @@ public final class Arima implements Forecaster {
     }
 
     public #Series forecast(int64 h) {
-        ForecastResult f = this.forecastInterval(h, 0.05);
+        ForecastResult f #= this.forecastInterval(h, 0.05);
         Series m = f.mean;
         return Series.of(m.values(), m.index());
     }
@@ -418,9 +418,9 @@ public final class Arima implements Forecaster {
             i2 = i2 + 1;
         }
         int64[] sh = heap int64[1]; sh[0] = h;
-        Series ms = Series.of(Tensor.of<float64>(level, sh), idx);
-        Series ls = Series.of(Tensor.of<float64>(lo, sh), idx);
-        Series hs = Series.of(Tensor.of<float64>(hi, sh), idx);
+        Series ms #= Series.of(Tensor.of<float64>(level, sh), idx);
+        Series ls #= Series.of(Tensor.of<float64>(lo, sh), idx);
+        Series hs #= Series.of(Tensor.of<float64>(hi, sh), idx);
         ForecastResult fr = heap ForecastResult(#ms, #ls, #hs, alpha);
         return #fr;
     }

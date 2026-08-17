@@ -138,10 +138,10 @@ public final class Decompose {
         }
 
         int64[] sh = heap int64[1]; sh[0] = n;
-        int64[] idx = s.index();
-        Series trS = Series.of(Tensor.of<float64>(tr, sh), idx);
-        Series seS = Series.of(Tensor.of<float64>(se, sh), idx);
-        Series reS = Series.of(Tensor.of<float64>(re, sh), idx);
+        int64[] idx #= s.index();
+        Series trS #= Series.of(Tensor.of<float64>(tr, sh), idx);
+        Series seS #= Series.of(Tensor.of<float64>(se, sh), idx);
+        Series reS #= Series.of(Tensor.of<float64>(re, sh), idx);
         Decomposition d = heap Decomposition(#trS, #seS, #reS, mult);
         return #d;
     }

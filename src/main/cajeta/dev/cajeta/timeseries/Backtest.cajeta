@@ -32,16 +32,16 @@ public final class Backtest {
         float64[] acts = heap float64[m];
         int64 o = initial;
         while (o + h <= n) {
-            Series train = Split.slice(s, (int64) 0, o);
+            Series train #= Split.slice(s, (int64) 0, o);
             f.fit(train);
-            Series fc = f.forecast(h);
+            Series fc #= f.forecast(h);
             preds[o - initial] = fc.get(h - 1);
             acts[o - initial] = s.get(o + h - 1);
             o = o + 1;
         }
         int64[] sh = heap int64[1]; sh[0] = m;
-        Tensor<float64> pt = Tensor.of<float64>(preds, sh);
-        Tensor<float64> at = Tensor.of<float64>(acts, sh);
+        Tensor<float64> pt #= Tensor.of<float64>(preds, sh);
+        Tensor<float64> at #= Tensor.of<float64>(acts, sh);
         BacktestResult r = heap BacktestResult(#pt, #at, h);
         return #r;
     }

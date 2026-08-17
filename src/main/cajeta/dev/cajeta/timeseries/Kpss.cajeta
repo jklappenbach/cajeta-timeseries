@@ -44,7 +44,7 @@ public final class Kpss {
                 xf[i * 2 + 1] = (float64) (i + 1);
                 i = i + 1;
             }
-            Ols o = Ols.fit(xf, n, (int64) 2, x);
+            Ols o #= Ols.fit(xf, n, (int64) 2, x);
             i = 0;
             while (i < n) { resid[i] = o.resid[i]; i = i + 1; }
         } else {

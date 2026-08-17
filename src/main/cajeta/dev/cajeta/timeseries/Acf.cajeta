@@ -36,7 +36,7 @@ public final class Acf {
             throw heap TsException("Acf: the series has " + s.missingCount()
                 + " missing value(s) — drop or repair them first");
         }
-        float64[] acov = Acf.acovf(s, nlags, adjusted, useFft);
+        float64[] acov #= Acf.acovf(s, nlags, adjusted, useFft);
         float64[] r = heap float64[nlags + 1];
         int64 k = 0;
         while (k <= nlags) { r[k] = acov[k] / acov[0]; k = k + 1; }
@@ -99,7 +99,7 @@ public final class Acf {
             i = 0;
             while (i < m * 2) { b32[i] = (float32) buf[i]; i = i + 1; }
             int64[] sh = heap int64[1]; sh[0] = m * 2;
-            Tensor<float32> f = Fft.fft(Tensor.of<float32>(b32, sh));
+            Tensor<float32> f #= Fft.fft(Tensor.of<float32>(b32, sh));
             float32[] p32 = heap float32[m * 2];
             i = 0;
             while (i < m) {
@@ -109,7 +109,7 @@ public final class Acf {
                 p32[i * 2 + 1] = 0.0f;
                 i = i + 1;
             }
-            Tensor<float32> back = Fft.ifft(Tensor.of<float32>(p32, sh));
+            Tensor<float32> back #= Fft.ifft(Tensor.of<float32>(p32, sh));
             int64 k = 0;
             while (k <= nlags) {
                 float64 d;

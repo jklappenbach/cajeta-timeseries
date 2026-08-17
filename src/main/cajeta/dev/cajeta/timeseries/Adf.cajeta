@@ -144,7 +144,7 @@ public final class Adf {
                 float64 stop = 1.6448536269514722;
                 int64 lag = startlag + maxlag;
                 while (lag >= startlag) {
-                    Ols o = Ols.fit(Adf.takeCols(rhs, nobs, full, lag),
+                    Ols o #= Ols.fit(Adf.takeCols(rhs, nobs, full, lag),
                                     nobs, lag, yv);
                     float64 tl = o.tvals[lag - 1];
                     if (tl < 0.0) { tl = -tl; }
@@ -157,7 +157,7 @@ public final class Adf {
                 boolean first = true;
                 int64 lag = startlag;
                 while (lag <= startlag + maxlag) {
-                    Ols o = Ols.fit(Adf.takeCols(rhs, nobs, full, lag),
+                    Ols o #= Ols.fit(Adf.takeCols(rhs, nobs, full, lag),
                                     nobs, lag, yv);
                     float64 ic;
                     if (mode == 0) { ic = o.aic(); } else { ic = o.bic(); }
@@ -199,7 +199,7 @@ public final class Adf {
             yv2[r2] = xdiff[t];
             r2 = r2 + 1;
         }
-        Ols fin = Ols.fit(rhs2, nobs2, cols, yv2);
+        Ols fin #= Ols.fit(rhs2, nobs2, cols, yv2);
         float64 stat = fin.tvals[0];
         float64 p = MacKinnon.pValue(stat, regression);
         AdfResult res = heap AdfResult(stat, p, usedlag, nobs2,

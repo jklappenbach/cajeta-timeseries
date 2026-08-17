@@ -46,13 +46,13 @@ public final class Pacf {
         }
         float64[] p = null;
         if (method.equals("ywm")) {
-            p = Pacf.yw(s, nlags, false);
+            p #= Pacf.yw(s, nlags, false);
         } else if (method.equals("ywadjusted")) {
-            p = Pacf.yw(s, nlags, true);
+            p #= Pacf.yw(s, nlags, true);
         } else if (method.equals("ols")) {
-            p = Pacf.ols(s, nlags);
+            p #= Pacf.ols(s, nlags);
         } else if (method.equals("ldb")) {
-            p = Pacf.ld(s, nlags);
+            p #= Pacf.ld(s, nlags);
         } else {
             throw heap TsException("Pacf: method must be \"ywm\", "
                 + "\"ywadjusted\", \"ols\", or \"ldb\" (got \"" + method
@@ -114,7 +114,7 @@ public final class Pacf {
             }
             int64[] msh = heap int64[2]; msh[0] = k; msh[1] = k;
             int64[] vsh = heap int64[1]; vsh[0] = k;
-            Tensor<float64> sol = LinAlg.solve<float64>(
+            Tensor<float64> sol #= LinAlg.solve<float64>(
                 Tensor.of<float64>(m, msh), Tensor.of<float64>(rhs, vsh));
             p[k] = sol.flatGet(k - 1);
             k = k + 1;
@@ -145,7 +145,7 @@ public final class Pacf {
                 yv[row] = s.get(t);
                 t = t + 1;
             }
-            Ols o = Ols.fit(xf, rows, cols, yv);
+            Ols o #= Ols.fit(xf, rows, cols, yv);
             p[k] = o.beta[cols - 1];
             k = k + 1;
         }

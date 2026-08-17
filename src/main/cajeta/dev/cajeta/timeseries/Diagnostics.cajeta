@@ -122,7 +122,7 @@ public final class Diagnostics {
         float64 pVar = 2.0 * (1.0 - Stats.normalCdf(zl));
 
         // No autocorrelation: joint Ljung-Box at the deepest lag.
-        LjungBoxResult lb = Diagnostics.ljungBox(s);
+        LjungBoxResult lb #= Diagnostics.ljungBox(s);
         float64 pAc = lb.pValue(lb.lags());
 
         WhiteNoiseResult r = heap WhiteNoiseResult(pMean, pVar, pAc, alpha);
@@ -149,8 +149,8 @@ public final class Diagnostics {
      * the unit root AND the increments pass Ljung-Box.
      */
     public static #RandomWalkResult detectRandomWalk(Series s) {
-        AdfResult adf = Adf.test(s);
-        LjungBoxResult lb = Diagnostics.ljungBox(s.diff());
+        AdfResult adf #= Adf.test(s);
+        LjungBoxResult lb #= Diagnostics.ljungBox(s.diff());
         float64 lbP = lb.pValue(lb.lags());
         boolean rw = !adf.isStationary(0.05) && lbP >= 0.05;
         RandomWalkResult r = heap RandomWalkResult(rw, adf.pValue(), lbP);
@@ -167,7 +167,7 @@ public final class Diagnostics {
             throw heap TsException("randomWalk: n must be >= 2");
         }
         Generator g = heap Generator(seed);
-        Tensor<float32> e = g.normal(n);
+        Tensor<float32> e #= g.normal(n);
         float64[] a = heap float64[n];
         float64 acc = 0.0;
         int64 i = 0;

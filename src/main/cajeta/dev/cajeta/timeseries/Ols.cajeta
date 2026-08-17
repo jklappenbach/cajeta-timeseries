@@ -59,10 +59,10 @@ final class Ols {
         while (i < rows) { yc[i] = y[i]; i = i + 1; }
         int64[] xsh = heap int64[2]; xsh[0] = rows; xsh[1] = cols;
         int64[] ysh = heap int64[1]; ysh[0] = rows;
-        Tensor<float64> xt = Tensor.of<float64>(xc, xsh);
-        Tensor<float64> yt = Tensor.of<float64>(yc, ysh);
+        Tensor<float64> xt #= Tensor.of<float64>(xc, xsh);
+        Tensor<float64> yt #= Tensor.of<float64>(yc, ysh);
 
-        Tensor<float64> bt = LinAlg.lstsq<float64>(xt, yt);
+        Tensor<float64> bt #= LinAlg.lstsq<float64>(xt, yt);
         float64[] beta = heap float64[cols];
         int64 j = 0;
         while (j < cols) { beta[j] = bt.flatGet(j); j = j + 1; }
@@ -100,7 +100,7 @@ final class Ols {
             a = a + 1;
         }
         int64[] gsh = heap int64[2]; gsh[0] = cols; gsh[1] = cols;
-        Tensor<float64> gi = LinAlg.pinv<float64>(Tensor.of<float64>(g, gsh));
+        Tensor<float64> gi #= LinAlg.pinv<float64>(Tensor.of<float64>(g, gsh));
 
         float64 s2 = ssr / (float64) (rows - cols);
         float64[] tvals = heap float64[cols];

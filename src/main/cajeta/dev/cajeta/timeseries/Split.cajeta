@@ -33,8 +33,8 @@ public final class Split {
             throw heap TsException("Split: testFraction " + testFraction
                 + " leaves no training data (n = " + n + ")");
         }
-        Series tr = Split.slice(s, (int64) 0, nTrain);
-        Series te = Split.slice(s, nTrain, n);
+        Series tr #= Split.slice(s, (int64) 0, nTrain);
+        Series te #= Split.slice(s, nTrain, n);
         TrainTest tt = heap TrainTest(#tr, #te);
         return #tt;
     }
