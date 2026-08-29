@@ -19,9 +19,9 @@ public class DecomposeTest {
     public DecomposeTest() { return; }
 
     static void assertComponentsMatch(Decomposition d, String prefix) {
-        Tensor<float64> wantT = Fx.load(prefix + "_trend");
-        Tensor<float64> wantS = Fx.load(prefix + "_seasonal");
-        Tensor<float64> wantR = Fx.load(prefix + "_resid");
+        Tensor<float64> wantT #= Fx.load(prefix + "_trend");
+        Tensor<float64> wantS #= Fx.load(prefix + "_seasonal");
+        Tensor<float64> wantR #= Fx.load(prefix + "_resid");
         int64 n = wantT.shapeAt(0);
         Assert.equals(d.trend.count(), n);
         int64 i = 0;
@@ -39,8 +39,8 @@ public class DecomposeTest {
     // missing on each side of the trend).
     @Test
     public void additiveMatchesStatsmodels() {
-        Series s = Series.of(Fx.load("ts_decomp_add_observed"));
-        Decomposition d = Decompose.additive(s, (int64) 12);
+        Series s #= Series.of(Fx.load("ts_decomp_add_observed"));
+        Decomposition d #= Decompose.additive(s, (int64) 12);
         DecomposeTest.assertComponentsMatch(d, "ts_decomp_add");
         // The endpoint policy is explicit: period/2 missing each side.
         Assert.equals(d.trend.missingCount(), (int64) 12);
@@ -56,12 +56,12 @@ public class DecomposeTest {
     // is genuinely distinct from the additive model.
     @Test
     public void multiplicativeMatchesStatsmodelsAndDiffersFromAdditive() {
-        Series s = Series.of(Fx.load("ts_decomp_mult_observed"));
-        Decomposition m = Decompose.multiplicative(s, (int64) 12);
+        Series s #= Series.of(Fx.load("ts_decomp_mult_observed"));
+        Decomposition m #= Decompose.multiplicative(s, (int64) 12);
         DecomposeTest.assertComponentsMatch(m, "ts_decomp_mult");
         // Multiplicative seasonal factors hover around 1; the additive
         // seasonal of the same series hovers around 0 — distinct models.
-        Decomposition a = Decompose.additive(s, (int64) 12);
+        Decomposition a #= Decompose.additive(s, (int64) 12);
         Assert.isTrue(Fx.close(DecomposeTest.meanAbs(m.seasonal), 1.0, 0.5));
         Assert.isTrue(DecomposeTest.meanAbs(a.seasonal) > 1.0);
         return;
@@ -83,8 +83,8 @@ public class DecomposeTest {
     // on each side for period 7, matching statsmodels exactly.
     @Test
     public void oddPeriodEndpointsMatch() {
-        Series s = Series.of(Fx.load("ts_decomp_odd_observed"));
-        Decomposition d = Decompose.additive(s, (int64) 7);
+        Series s #= Series.of(Fx.load("ts_decomp_odd_observed"));
+        Decomposition d #= Decompose.additive(s, (int64) 7);
         DecomposeTest.assertComponentsMatch(d, "ts_decomp_odd");
         Assert.equals(d.trend.missingCount(), (int64) 6);
         Assert.isTrue(d.trend.isMissing((int64) 2));
@@ -96,8 +96,8 @@ public class DecomposeTest {
     // multiplicatively as chosen, wherever the trend is defined.
     @Test
     public void componentsRecombine() {
-        Series sa = Series.of(Fx.load("ts_decomp_add_observed"));
-        Decomposition da = Decompose.additive(sa, (int64) 12);
+        Series sa #= Series.of(Fx.load("ts_decomp_add_observed"));
+        Decomposition da #= Decompose.additive(sa, (int64) 12);
         int64 i = 0;
         while (i < sa.count()) {
             if (!da.trend.isMissing(i)) {
@@ -106,8 +106,8 @@ public class DecomposeTest {
             }
             i = i + 1;
         }
-        Series sm = Series.of(Fx.load("ts_decomp_mult_observed"));
-        Decomposition dm = Decompose.multiplicative(sm, (int64) 12);
+        Series sm #= Series.of(Fx.load("ts_decomp_mult_observed"));
+        Decomposition dm #= Decompose.multiplicative(sm, (int64) 12);
         i = 0;
         while (i < sm.count()) {
             if (!dm.trend.isMissing(i)) {
@@ -124,22 +124,22 @@ public class DecomposeTest {
     // below 2, and a multiplicative model over non-positive values.
     @Test
     public void impossibleConfigurationsAreLoud() {
-        Series s = Series.of(Fx.load("ts_decomp_add_observed"));   // n = 48
+        Series s #= Series.of(Fx.load("ts_decomp_add_observed"));   // n = 48
         boolean threw = false;
         try {
-            Decomposition d = Decompose.additive(s, (int64) 100);
+            Decomposition d #= Decompose.additive(s, (int64) 100);
         } catch (TsException ex) { threw = true; }
         Assert.isTrue(threw);
 
         threw = false;
         try {
-            Decomposition d2 = Decompose.additive(s, (int64) 25);  // < 2 cycles
+            Decomposition d2 #= Decompose.additive(s, (int64) 25);  // < 2 cycles
         } catch (TsException ex) { threw = true; }
         Assert.isTrue(threw);
 
         threw = false;
         try {
-            Decomposition d3 = Decompose.additive(s, (int64) 1);
+            Decomposition d3 #= Decompose.additive(s, (int64) 1);
         } catch (TsException ex) { threw = true; }
         Assert.isTrue(threw);
 
@@ -147,10 +147,10 @@ public class DecomposeTest {
         int64 i = 0;
         while (i < 24) { neg[i] = (float64) i - 5.0; i = i + 1; }
         int64[] sh = heap int64[1]; sh[0] = 24;
-        Series sn = Series.of(Tensor.of<float64>(neg, sh));
+        Series sn #= Series.of(Tensor.of<float64>(neg, sh));
         threw = false;
         try {
-            Decomposition d4 = Decompose.multiplicative(sn, (int64) 12);
+            Decomposition d4 #= Decompose.multiplicative(sn, (int64) 12);
         } catch (TsException ex) { threw = true; }
         Assert.isTrue(threw);
         return;

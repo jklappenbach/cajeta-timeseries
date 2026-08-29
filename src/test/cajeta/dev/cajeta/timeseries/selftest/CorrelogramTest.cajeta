@@ -22,11 +22,11 @@ public class CorrelogramTest {
     // exactly; the band WIDENS with lag; lag 0 is exactly 1.
     @Test
     public void acfValuesAndBartlettBandMatch() {
-        Series ar1 = Series.of(Fx.load("ts_diag_ar1"));
-        AcfResult r = Acf.compute(ar1, (int64) 20);
+        Series ar1 #= Series.of(Fx.load("ts_diag_ar1"));
+        AcfResult r #= Acf.compute(ar1, (int64) 20);
         Assert.isTrue(r.value((int64) 0) == 1.0);
-        Tensor<float64> want = Fx.load("ts_acf_ar1");
-        Tensor<float64> ci = Fx.load("ts_acf_ar1_confint");
+        Tensor<float64> want #= Fx.load("ts_acf_ar1");
+        Tensor<float64> ci #= Fx.load("ts_acf_ar1_confint");
         int64 k = 0;
         while (k <= 20) {
             Assert.isTrue(Fx.close(r.value(k), want.flatGet(k), 0.0000000001));
@@ -38,8 +38,8 @@ public class CorrelogramTest {
         Assert.isTrue(r.interval((int64) 10) > r.interval((int64) 1));
 
         // The constant band does not.
-        AcfResult rc = Acf.compute(ar1, (int64) 20, false, false, false, 0.05);
-        Tensor<float64> cic = Fx.load("ts_acf_ar1_confint_const");
+        AcfResult rc #= Acf.compute(ar1, (int64) 20, false, false, false, 0.05);
+        Tensor<float64> cic #= Fx.load("ts_acf_ar1_confint_const");
         k = 0;
         while (k <= 20) {
             Assert.isTrue(Fx.close(rc.confLow(k), cic.flatGet(k * 2), 0.000000001));
@@ -53,9 +53,9 @@ public class CorrelogramTest {
     // 5.1.4 — the adjusted estimator (n−k denominators) matches.
     @Test
     public void adjustedEstimatorMatches() {
-        Series ar1 = Series.of(Fx.load("ts_diag_ar1"));
-        AcfResult r = Acf.compute(ar1, (int64) 20, true, false, true, 0.05);
-        Tensor<float64> want = Fx.load("ts_acf_ar1_adj");
+        Series ar1 #= Series.of(Fx.load("ts_diag_ar1"));
+        AcfResult r #= Acf.compute(ar1, (int64) 20, true, false, true, 0.05);
+        Tensor<float64> want #= Fx.load("ts_acf_ar1_adj");
         int64 k = 0;
         while (k <= 20) {
             Assert.isTrue(Fx.close(r.value(k), want.flatGet(k), 0.0000000001));
@@ -69,9 +69,9 @@ public class CorrelogramTest {
     // optimization safe).
     @Test
     public void fftPathAgreesWithDirect() {
-        Series ar1 = Series.of(Fx.load("ts_diag_ar1"));
-        AcfResult direct = Acf.compute(ar1, (int64) 20);
-        AcfResult viaFft = Acf.compute(ar1, (int64) 20, false, true, true, 0.05);
+        Series ar1 #= Series.of(Fx.load("ts_diag_ar1"));
+        AcfResult direct #= Acf.compute(ar1, (int64) 20);
+        AcfResult viaFft #= Acf.compute(ar1, (int64) 20, false, true, true, 0.05);
         int64 k = 0;
         while (k <= 20) {
             Assert.isTrue(Fx.close(viaFft.value(k), direct.value(k), 0.0001));
@@ -84,15 +84,15 @@ public class CorrelogramTest {
     // Levinson-Durbin all match statsmodels.
     @Test
     public void pacfMethodsMatch() {
-        Series ar1 = Series.of(Fx.load("ts_diag_ar1"));
-        AcfResult ywm = Pacf.compute(ar1, (int64) 20);
-        AcfResult ywa = Pacf.compute(ar1, (int64) 20, "ywadjusted");
-        AcfResult ols = Pacf.compute(ar1, (int64) 20, "ols");
-        AcfResult ldb = Pacf.compute(ar1, (int64) 20, "ldb");
-        Tensor<float64> wYwm = Fx.load("ts_pacf_ar1_ywm");
-        Tensor<float64> wYwa = Fx.load("ts_pacf_ar1_ywa");
-        Tensor<float64> wOls = Fx.load("ts_pacf_ar1_ols");
-        Tensor<float64> wLdb = Fx.load("ts_pacf_ar1_ldb");
+        Series ar1 #= Series.of(Fx.load("ts_diag_ar1"));
+        AcfResult ywm #= Pacf.compute(ar1, (int64) 20);
+        AcfResult ywa #= Pacf.compute(ar1, (int64) 20, "ywadjusted");
+        AcfResult ols #= Pacf.compute(ar1, (int64) 20, "ols");
+        AcfResult ldb #= Pacf.compute(ar1, (int64) 20, "ldb");
+        Tensor<float64> wYwm #= Fx.load("ts_pacf_ar1_ywm");
+        Tensor<float64> wYwa #= Fx.load("ts_pacf_ar1_ywa");
+        Tensor<float64> wOls #= Fx.load("ts_pacf_ar1_ols");
+        Tensor<float64> wLdb #= Fx.load("ts_pacf_ar1_ldb");
         int64 k = 0;
         while (k <= 20) {
             Assert.isTrue(Fx.close(ywm.value(k), wYwm.flatGet(k), 0.0000000001));
@@ -115,15 +115,15 @@ public class CorrelogramTest {
     // lastSignificantLag() reads the order off the correlogram.
     @Test
     public void arMaIdentification() {
-        Series ar2 = Series.of(Fx.load("ts_ident_ar2"));
-        AcfResult p = Pacf.compute(ar2, (int64) 6);
+        Series ar2 #= Series.of(Fx.load("ts_ident_ar2"));
+        AcfResult p #= Pacf.compute(ar2, (int64) 6);
         Assert.isTrue(p.significant((int64) 1));
         Assert.isTrue(p.significant((int64) 2));
         Assert.isTrue(!p.significant((int64) 3));
         Assert.equals(p.lastSignificantLag(), (int64) 2);   // suggests p = 2
 
-        Series ma2 = Series.of(Fx.load("ts_ident_ma2"));
-        AcfResult a = Acf.compute(ma2, (int64) 6);
+        Series ma2 #= Series.of(Fx.load("ts_ident_ma2"));
+        AcfResult a #= Acf.compute(ma2, (int64) 6);
         Assert.isTrue(a.significant((int64) 1));
         Assert.isTrue(a.significant((int64) 2));
         Assert.isTrue(!a.significant((int64) 3));

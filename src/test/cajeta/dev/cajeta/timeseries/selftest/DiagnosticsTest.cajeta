@@ -23,18 +23,18 @@ public class DiagnosticsTest {
     // every lag 1..10, on white noise and on an AR(1).
     @Test
     public void ljungBoxMatchesStatsmodels() {
-        Series wn = Series.of(Fx.load("ts_stat_wn"));
-        LjungBoxResult r = Diagnostics.ljungBox(wn, (int64) 10);
-        Tensor<float64> w = Fx.load("ts_lb_wn");        // (10, 2): stat, p
+        Series wn #= Series.of(Fx.load("ts_stat_wn"));
+        LjungBoxResult r #= Diagnostics.ljungBox(wn, (int64) 10);
+        Tensor<float64> w #= Fx.load("ts_lb_wn");        // (10, 2): stat, p
         int64 k = 1;
         while (k <= 10) {
             Assert.isTrue(Fx.close(r.statistic(k), w.flatGet((k - 1) * 2), 0.00000001));
             Assert.isTrue(Fx.close(r.pValue(k), w.flatGet((k - 1) * 2 + 1), 0.00000001));
             k = k + 1;
         }
-        Series ar1 = Series.of(Fx.load("ts_diag_ar1"));
-        LjungBoxResult r2 = Diagnostics.ljungBox(ar1, (int64) 10);
-        Tensor<float64> w2 = Fx.load("ts_lb_ar1");
+        Series ar1 #= Series.of(Fx.load("ts_diag_ar1"));
+        LjungBoxResult r2 #= Diagnostics.ljungBox(ar1, (int64) 10);
+        Tensor<float64> w2 #= Fx.load("ts_lb_ar1");
         k = 1;
         while (k <= 10) {
             Assert.isTrue(Fx.close(r2.statistic(k), w2.flatGet((k - 1) * 2), 0.00000001));
@@ -48,24 +48,24 @@ public class DiagnosticsTest {
     // the failed condition rather than reporting a bare pass/fail.
     @Test
     public void whiteNoiseConditionsAreAttributed() {
-        WhiteNoiseResult wn = Diagnostics.whiteNoise(
+        WhiteNoiseResult wn #= Diagnostics.whiteNoise(
             Series.of(Fx.load("ts_stat_wn")));
         Assert.isTrue(wn.isWhiteNoise());
         Assert.isTrue(wn.failedConditions().equals("none"));
 
-        WhiteNoiseResult tr = Diagnostics.whiteNoise(
+        WhiteNoiseResult tr #= Diagnostics.whiteNoise(
             Series.of(Fx.load("ts_stat_trend")));
         Assert.isTrue(!tr.isWhiteNoise());
         Assert.isTrue(!tr.meanOk());                    // fails on the mean
 
-        WhiteNoiseResult het = Diagnostics.whiteNoise(
+        WhiteNoiseResult het #= Diagnostics.whiteNoise(
             Series.of(Fx.load("ts_diag_hetero")));
         Assert.isTrue(!het.isWhiteNoise());
         Assert.isTrue(!het.varianceOk());               // fails on variance
         Assert.isTrue(het.meanOk());
         Assert.isTrue(het.autocorrelationOk());
 
-        WhiteNoiseResult ar = Diagnostics.whiteNoise(
+        WhiteNoiseResult ar #= Diagnostics.whiteNoise(
             Series.of(Fx.load("ts_diag_ar1")));
         Assert.isTrue(!ar.isWhiteNoise());
         Assert.isTrue(!ar.autocorrelationOk());         // fails on memory
@@ -78,7 +78,7 @@ public class DiagnosticsTest {
     // least squares φ̂ = Σyₜyₜ₋₁ / Σyₜ₋₁².
     @Test
     public void residualWhiteNoiseJudgesTheFit() {
-        Tensor<float64> y = Fx.load("ts_diag_ar1");
+        Tensor<float64> y #= Fx.load("ts_diag_ar1");
         int64 n = y.shapeAt(0);
         float64 num = 0.0;
         float64 den = 0.0;
@@ -97,7 +97,7 @@ public class DiagnosticsTest {
             i = i + 1;
         }
         int64[] sh = heap int64[1]; sh[0] = n - 1;
-        WhiteNoiseResult r = Diagnostics.whiteNoise(
+        WhiteNoiseResult r #= Diagnostics.whiteNoise(
             Series.of(Tensor.of<float64>(res, sh)));
         Assert.isTrue(r.isWhiteNoise());                // structure captured
         return;
@@ -108,22 +108,22 @@ public class DiagnosticsTest {
     // noise are NOT random walks; the verdict speaks in unit-root terms.
     @Test
     public void randomWalkDetection() {
-        Series w1 = Diagnostics.randomWalk((uint64) 21, (int64) 300);
-        Series w2 = Diagnostics.randomWalk((uint64) 21, (int64) 300);
+        Series w1 #= Diagnostics.randomWalk((uint64) 21, (int64) 300);
+        Series w2 #= Diagnostics.randomWalk((uint64) 21, (int64) 300);
         int64 i = 0;
         while (i < 300) {
             Assert.equals(Cajeta.f64ToBits(w2.get(i)), Cajeta.f64ToBits(w1.get(i)));
             i = i + 1;
         }
-        RandomWalkResult rw = Diagnostics.detectRandomWalk(w1);
+        RandomWalkResult rw #= Diagnostics.detectRandomWalk(w1);
         Assert.isTrue(rw.isRandomWalk());
         Assert.isTrue(rw.verdict().contains("fails to reject"));
 
-        RandomWalkResult tr = Diagnostics.detectRandomWalk(
+        RandomWalkResult tr #= Diagnostics.detectRandomWalk(
             Series.of(Fx.load("ts_stat_trend")));
         Assert.isTrue(!tr.isRandomWalk());
 
-        RandomWalkResult wn = Diagnostics.detectRandomWalk(
+        RandomWalkResult wn #= Diagnostics.detectRandomWalk(
             Series.of(Fx.load("ts_stat_wn")));
         Assert.isTrue(!wn.isRandomWalk());
         Assert.isTrue(wn.verdict().contains("rejects the unit root"));

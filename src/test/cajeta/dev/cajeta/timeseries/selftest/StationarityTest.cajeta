@@ -23,7 +23,7 @@ public class StationarityTest {
 
     // Fixture layout: [stat, pval, usedlag, nobs, crit1, crit5, crit10].
     static void assertAdf(AdfResult r, String fixture) {
-        Tensor<float64> w = Fx.load(fixture);
+        Tensor<float64> w #= Fx.load(fixture);
         Assert.isTrue(Fx.close(r.statistic(), w.flatGet((int64) 0), 0.00000001));
         Assert.isTrue(Fx.close(r.pValue(), w.flatGet((int64) 1), 0.00000001));
         Assert.equals(r.usedLag(), (int64) w.flatGet((int64) 2));
@@ -51,7 +51,7 @@ public class StationarityTest {
     // a fixed lag with no selection at all.
     @Test
     public void adfLagSelectionStrategiesMatch() {
-        Series wn = Series.of(Fx.load("ts_stat_wn"));
+        Series wn #= Series.of(Fx.load("ts_stat_wn"));
         StationarityTest.assertAdf(Adf.test(wn, "c", "bic"), "ts_adf_wn_c_bic");
         StationarityTest.assertAdf(Adf.test(wn, "c", "tstat"), "ts_adf_wn_c_tstat");
         StationarityTest.assertAdf(Adf.testFixed(wn, "c", (int64) 5),
@@ -62,10 +62,10 @@ public class StationarityTest {
     // 3.1.4 — all four regression forms match adfuller's `regression`.
     @Test
     public void adfRegressionFormsMatch() {
-        Series tr = Series.of(Fx.load("ts_stat_trend"));
+        Series tr #= Series.of(Fx.load("ts_stat_trend"));
         StationarityTest.assertAdf(Adf.test(tr, "ct"), "ts_adf_trend_ct_aic");
         StationarityTest.assertAdf(Adf.test(tr, "ctt"), "ts_adf_trend_ctt_aic");
-        Series rw = Series.of(Fx.load("ts_stat_rw"));
+        Series rw #= Series.of(Fx.load("ts_stat_rw"));
         StationarityTest.assertAdf(Adf.test(rw, "n"), "ts_adf_rw_n_aic");
         return;
     }
@@ -76,18 +76,18 @@ public class StationarityTest {
     // spelled-out null names the inversion.
     @Test
     public void nullHypothesisIsUnmistakable() {
-        Series wn = Series.of(Fx.load("ts_stat_wn"));
-        Series rw = Series.of(Fx.load("ts_stat_rw"));
+        Series wn #= Series.of(Fx.load("ts_stat_wn"));
+        Series rw #= Series.of(Fx.load("ts_stat_rw"));
 
-        AdfResult aWn = Adf.test(wn);
-        AdfResult aRw = Adf.test(rw);
+        AdfResult aWn #= Adf.test(wn);
+        AdfResult aRw #= Adf.test(rw);
         Assert.isTrue(aWn.isStationary(0.05));         // §11.3: white noise
         Assert.isTrue(!aRw.isStationary(0.05));        // §11.3: random walk
         Assert.isTrue(aWn.rejectsUnitRoot(0.05));
         Assert.isTrue(aWn.nullHypothesis().contains("UNIT ROOT"));
 
-        KpssResult kWn = Kpss.test(wn);
-        KpssResult kRw = Kpss.test(rw);
+        KpssResult kWn #= Kpss.test(wn);
+        KpssResult kRw #= Kpss.test(rw);
         Assert.isTrue(kWn.isStationary(0.05));         // same call, same read
         Assert.isTrue(!kRw.isStationary(0.05));
         Assert.isTrue(kWn.nullHypothesis().contains("IS stationary"));
@@ -106,9 +106,9 @@ public class StationarityTest {
         float64[] a = heap float64[5];
         a[0] = 2.0; a[1] = 3.0; a[2] = 4.0; a[3] = 10.0; a[4] = 20.0;
         int64[] sh = heap int64[1]; sh[0] = 5;
-        Series s = Series.of(Tensor.of<float64>(a, sh));
+        Series s #= Series.of(Tensor.of<float64>(a, sh));
 
-        Series d1 = s.diff();
+        Series d1 #= s.diff();
         Assert.equals(d1.count(), (int64) 4);
         Assert.isTrue(d1.get((int64) 0) == 1.0);
         Assert.isTrue(d1.get((int64) 1) == 1.0);
@@ -116,7 +116,7 @@ public class StationarityTest {
         Assert.isTrue(d1.get((int64) 3) == 10.0);
         Assert.equals(d1.indexAt((int64) 0), (int64) 1);
 
-        Series d2 = s.diff((int64) 2);
+        Series d2 #= s.diff((int64) 2);
         Assert.equals(d2.count(), (int64) 3);
         Assert.isTrue(d2.get((int64) 0) == 0.0);
         Assert.isTrue(d2.get((int64) 1) == 5.0);
@@ -129,11 +129,11 @@ public class StationarityTest {
     // the retained initial values (the §11.4 forecast path depends on it).
     @Test
     public void inverseDifferencingRoundTrips() {
-        Series s = Series.of(Fx.load("ts_stat_trend"));
+        Series s #= Series.of(Fx.load("ts_stat_trend"));
         int64 d = 2;
-        float64[] heads = s.diffHeads(d);
-        Series dd = s.diff(d);
-        Series back = Series.undiff(dd, heads);
+        float64[] heads #= s.diffHeads(d);
+        Series dd #= s.diff(d);
+        Series back #= Series.undiff(dd, heads);
         Assert.equals(back.count(), s.count());
         Assert.equals(back.indexAt((int64) 0), s.indexAt((int64) 0));
         int64 i = 0;
@@ -149,25 +149,25 @@ public class StationarityTest {
     @Test
     public void kpssMatchesStatsmodels() {
         // Fixture layout: [stat, pval, lags, crit10, crit5, crit2.5, crit1].
-        Series wn = Series.of(Fx.load("ts_stat_wn"));
-        KpssResult k = Kpss.test(wn);
-        Tensor<float64> w = Fx.load("ts_kpss_wn_c");
+        Series wn #= Series.of(Fx.load("ts_stat_wn"));
+        KpssResult k #= Kpss.test(wn);
+        Tensor<float64> w #= Fx.load("ts_kpss_wn_c");
         Assert.isTrue(Fx.close(k.statistic(), w.flatGet((int64) 0), 0.00000001));
         Assert.isTrue(Fx.close(k.pValue(), w.flatGet((int64) 1), 0.00000001));
         Assert.equals(k.lags(), (int64) w.flatGet((int64) 2));
         Assert.isTrue(k.crit10() == w.flatGet((int64) 3));
         Assert.isTrue(k.crit1() == w.flatGet((int64) 6));
 
-        Series rw = Series.of(Fx.load("ts_stat_rw"));
-        KpssResult k2 = Kpss.test(rw);
-        Tensor<float64> w2 = Fx.load("ts_kpss_rw_c");
+        Series rw #= Series.of(Fx.load("ts_stat_rw"));
+        KpssResult k2 #= Kpss.test(rw);
+        Tensor<float64> w2 #= Fx.load("ts_kpss_rw_c");
         Assert.isTrue(Fx.close(k2.statistic(), w2.flatGet((int64) 0), 0.00000001));
         Assert.isTrue(Fx.close(k2.pValue(), w2.flatGet((int64) 1), 0.00000001));
         Assert.isTrue(k2.pValueClamped());             // rw is off the table
 
-        Series tr = Series.of(Fx.load("ts_stat_trend"));
-        KpssResult k3 = Kpss.test(tr, "ct");
-        Tensor<float64> w3 = Fx.load("ts_kpss_trend_ct");
+        Series tr #= Series.of(Fx.load("ts_stat_trend"));
+        KpssResult k3 #= Kpss.test(tr, "ct");
+        Tensor<float64> w3 #= Fx.load("ts_kpss_trend_ct");
         Assert.isTrue(Fx.close(k3.statistic(), w3.flatGet((int64) 0), 0.00000001));
         Assert.isTrue(Fx.close(k3.pValue(), w3.flatGet((int64) 1), 0.00000001));
         Assert.equals(k3.lags(), (int64) w3.flatGet((int64) 2));
@@ -181,22 +181,22 @@ public class StationarityTest {
         int64 i = 0;
         while (i < 20) { c[i] = 3.0; i = i + 1; }
         int64[] sh = heap int64[1]; sh[0] = 20;
-        Series cs = Series.of(Tensor.of<float64>(c, sh));
+        Series cs #= Series.of(Tensor.of<float64>(c, sh));
         boolean threw = false;
         try {
-            AdfResult r = Adf.test(cs);
+            AdfResult r #= Adf.test(cs);
         } catch (TsException ex) { threw = true; }
         Assert.isTrue(threw);
 
-        Series wn = Series.of(Fx.load("ts_stat_wn"));
+        Series wn #= Series.of(Fx.load("ts_stat_wn"));
         threw = false;
         try {
-            AdfResult r2 = Adf.test(wn, "zz");
+            AdfResult r2 #= Adf.test(wn, "zz");
         } catch (TsException ex) { threw = true; }
         Assert.isTrue(threw);
         threw = false;
         try {
-            KpssResult r3 = Kpss.test(wn, "ctt");
+            KpssResult r3 #= Kpss.test(wn, "ctt");
         } catch (TsException ex) { threw = true; }
         Assert.isTrue(threw);
         return;

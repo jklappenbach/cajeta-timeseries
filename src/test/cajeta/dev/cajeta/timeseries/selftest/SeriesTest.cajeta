@@ -29,7 +29,7 @@ public class SeriesTest {
     // index; a mismatched index length is rejected (§2.1).
     @Test
     public void constructionFromTensor() {
-        Series s = Series.of(SeriesTest.vals5());
+        Series s #= Series.of(SeriesTest.vals5());
         Assert.equals(s.count(), (int64) 5);
         Assert.isTrue(s.get((int64) 2) == 3.0);
         // The implicit index is 0..n-1, step 1.
@@ -39,7 +39,7 @@ public class SeriesTest {
 
         int64[] idx = heap int64[5];
         idx[0] = 10; idx[1] = 20; idx[2] = 30; idx[3] = 40; idx[4] = 50;
-        Series t = Series.of(SeriesTest.vals5(), idx);
+        Series t #= Series.of(SeriesTest.vals5(), idx);
         Assert.equals(t.indexAt((int64) 0), (int64) 10);
         Assert.equals(t.indexStep(), (int64) 10);
 
@@ -47,7 +47,7 @@ public class SeriesTest {
         bad[0] = 0; bad[1] = 1; bad[2] = 2;
         boolean threw = false;
         try {
-            Series u = Series.of(SeriesTest.vals5(), bad);
+            Series u #= Series.of(SeriesTest.vals5(), bad);
         } catch (TsException ex) { threw = true; }
         Assert.isTrue(threw);
         return;
@@ -62,7 +62,7 @@ public class SeriesTest {
         gap[0] = 0; gap[1] = 1; gap[2] = 3; gap[3] = 4; gap[4] = 5;
         boolean threw = false;
         try {
-            Series s = Series.of(SeriesTest.vals5(), gap);
+            Series s #= Series.of(SeriesTest.vals5(), gap);
         } catch (TsException ex) { threw = true; }
         Assert.isTrue(threw);
 
@@ -70,7 +70,7 @@ public class SeriesTest {
         rev[0] = 50; rev[1] = 40; rev[2] = 30; rev[3] = 20; rev[4] = 10;
         threw = false;
         try {
-            Series s2 = Series.of(SeriesTest.vals5(), rev);
+            Series s2 #= Series.of(SeriesTest.vals5(), rev);
         } catch (TsException ex) { threw = true; }
         Assert.isTrue(threw);
         return;
@@ -82,8 +82,8 @@ public class SeriesTest {
     // incomplete leading rows (§2.3).
     @Test
     public void lagAlignmentAndLagMatrix() {
-        Series s = Series.of(SeriesTest.vals5());
-        Series l2 = s.lag((int64) 2);
+        Series s #= Series.of(SeriesTest.vals5());
+        Series l2 #= s.lag((int64) 2);
         Assert.equals(l2.count(), (int64) 5);          // length is explicit: unchanged
         Assert.isTrue(l2.isMissing((int64) 0));
         Assert.isTrue(l2.isMissing((int64) 1));
@@ -94,17 +94,17 @@ public class SeriesTest {
         Assert.equals(l2.missingCount(), (int64) 2);
 
         // lag(0) is the identity; a negative k is meaningless here.
-        Series l0 = s.lag((int64) 0);
+        Series l0 #= s.lag((int64) 0);
         Assert.isTrue(l0.get((int64) 0) == 1.0);
         boolean threw = false;
         try {
-            Series ln = s.lag((int64) -1);
+            Series ln #= s.lag((int64) -1);
         } catch (TsException ex) { threw = true; }
         Assert.isTrue(threw);
 
         // Lag matrix over lags 1..p: shape (n-p, p), row t = [y(t-1)..y(t-p)]
         // for t = p..n-1 — the design matrix §8's autoregressions consume.
-        Tensor<float64> m = s.lagMatrix((int64) 2);
+        Tensor<float64> m #= s.lagMatrix((int64) 2);
         Assert.equals(m.shapeAt(0), (int64) 3);
         Assert.equals(m.shapeAt(1), (int64) 2);
         Assert.isTrue(m.flatGet((int64) 0) == 2.0);    // t=2: y(1)
@@ -125,14 +125,14 @@ public class SeriesTest {
         a[0] = 0.0 / 0.0;                              // NaN — missing
         a[1] = 2.0; a[2] = 3.0; a[3] = 4.0; a[4] = 5.0;
         int64[] sh = heap int64[1]; sh[0] = 5;
-        Series s = Series.of(Tensor.of<float64>(a, sh));
+        Series s #= Series.of(Tensor.of<float64>(a, sh));
         Assert.isTrue(s.hasMissing());
         Assert.equals(s.missingCount(), (int64) 1);
         Assert.isTrue(s.isMissing((int64) 0));
         Assert.isTrue(!s.isMissing((int64) 1));
 
         // Leading missing drops cleanly; the index stays regular.
-        Series d = s.dropMissing();
+        Series d #= s.dropMissing();
         Assert.equals(d.count(), (int64) 4);
         Assert.isTrue(d.get((int64) 0) == 2.0);
         Assert.equals(d.indexAt((int64) 0), (int64) 1);
@@ -143,17 +143,17 @@ public class SeriesTest {
         b[0] = 1.0; b[1] = 2.0;
         b[2] = 0.0 / 0.0;
         b[3] = 4.0; b[4] = 5.0;
-        Series si = Series.of(Tensor.of<float64>(b, sh));
+        Series si #= Series.of(Tensor.of<float64>(b, sh));
         boolean threw = false;
         try {
-            Series di = si.dropMissing();
+            Series di #= si.dropMissing();
         } catch (TsException ex) { threw = true; }
         Assert.isTrue(threw);
 
         // The lag matrix rejects missing outright.
         threw = false;
         try {
-            Tensor<float64> m = si.lagMatrix((int64) 2);
+            Tensor<float64> m #= si.lagMatrix((int64) 2);
         } catch (TsException ex) { threw = true; }
         Assert.isTrue(threw);
         return;
@@ -164,8 +164,8 @@ public class SeriesTest {
     // starting at j.
     @Test
     public void trajectoryMatrixIsHankel() {
-        Series s = Series.of(SeriesTest.vals5());
-        Tensor<float64> m = s.trajectoryMatrix((int64) 3);
+        Series s #= Series.of(SeriesTest.vals5());
+        Tensor<float64> m #= s.trajectoryMatrix((int64) 3);
         Assert.equals(m.shapeAt(0), (int64) 3);
         Assert.equals(m.shapeAt(1), (int64) 3);
         // Column 0: [1,2,3]; column 2: [3,4,5]; anti-diagonals constant.
@@ -196,38 +196,38 @@ public class SeriesTest {
         Table<TsRow> tab = heap Table<TsRow>(
             Column.of<int64>(tv), Column.of<float64>(yv));
 
-        Series s = Series.fromTable<TsRow>(tab, "y", "t");
+        Series s #= Series.fromTable<TsRow>(tab, "y", "t");
         Assert.equals(s.count(), n);
         Assert.equals(s.indexAt((int64) 0), (int64) 100);
         Assert.equals(s.indexStep(), (int64) 5);
         Assert.isTrue(s.get((int64) 3) == 0.5 * 9.0 - 3.0);
 
         // Without an index column: the implicit 0..n-1 index.
-        Series s0 = Series.fromTable<TsRow>(tab, "y");
+        Series s0 #= Series.fromTable<TsRow>(tab, "y");
         Assert.equals(s0.indexAt((int64) 5), (int64) 5);
 
         // Unknown / wrongly-typed columns are loud.
         boolean threw = false;
         try {
-            Series bad = Series.fromTable<TsRow>(tab, "nope", "t");
+            Series bad #= Series.fromTable<TsRow>(tab, "nope", "t");
         } catch (TsException ex) { threw = true; }
         Assert.isTrue(threw);
         threw = false;
         try {
-            Series bad2 = Series.fromTable<TsRow>(tab, "t", "y");
+            Series bad2 #= Series.fromTable<TsRow>(tab, "t", "y");
         } catch (TsException ex) { threw = true; }
         Assert.isTrue(threw);
 
         // Round trip: Series -> arrays -> a fresh Table -> Series. Values
         // and index survive bit-exactly.
-        int64[] t2 = s.index();
-        Tensor<float64> v2 = s.values();
+        int64[] t2 #= s.index();
+        Tensor<float64> v2 #= s.values();
         float64[] y2 = heap float64[n];
         i = 0;
         while (i < n) { y2[i] = v2.flatGet(i); i = i + 1; }
         Table<TsRow> tab2 = heap Table<TsRow>(
             Column.of<int64>(t2), Column.of<float64>(y2));
-        Series s2 = Series.fromTable<TsRow>(tab2, "y", "t");
+        Series s2 #= Series.fromTable<TsRow>(tab2, "y", "t");
         Assert.equals(s2.count(), s.count());
         i = 0;
         while (i < n) {

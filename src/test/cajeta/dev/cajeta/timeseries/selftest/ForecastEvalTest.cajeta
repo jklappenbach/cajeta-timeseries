@@ -31,12 +31,12 @@ public class ForecastEvalTest {
     // not the differences'.
     @Test
     public void arimaForecastsInOriginalScale() {
-        Series s = Series.of(Fx.load("ts_arima111_series"));
+        Series s #= Series.of(Fx.load("ts_arima111_series"));
         Arima m = heap Arima((int64) 1, (int64) 1, (int64) 1);
         m.fit(s);
-        ForecastResult f = m.forecastInterval((int64) 10, 0.05);
-        Tensor<float64> wm = Fx.load("ts_arima_111_fc");
-        Tensor<float64> wc = Fx.load("ts_arima_111_fc_ci");
+        ForecastResult f #= m.forecastInterval((int64) 10, 0.05);
+        Tensor<float64> wm #= Fx.load("ts_arima_111_fc");
+        Tensor<float64> wc #= Fx.load("ts_arima_111_fc_ci");
         int64 i = 0;
         while (i < 10) {
             Assert.isTrue(Fx.close(f.mean.get(i), wm.flatGet(i), 0.02));
@@ -60,12 +60,12 @@ public class ForecastEvalTest {
     // with the horizon.
     @Test
     public void forecastIntervalsMatch() {
-        Series ar2 = Series.of(Fx.load("ts_ident_ar2"));
+        Series ar2 #= Series.of(Fx.load("ts_ident_ar2"));
         AutoReg a = heap AutoReg((int64) 2);
         a.fit(ar2);
-        ForecastResult fa = a.forecastInterval((int64) 5, 0.05);
-        Tensor<float64> wm = Fx.load("ts_ar_ar2_c_fc");
-        Tensor<float64> wc = Fx.load("ts_ar_ar2_c_fc_ci");
+        ForecastResult fa #= a.forecastInterval((int64) 5, 0.05);
+        Tensor<float64> wm #= Fx.load("ts_ar_ar2_c_fc");
+        Tensor<float64> wc #= Fx.load("ts_ar_ar2_c_fc_ci");
         int64 i = 0;
         while (i < 5) {
             Assert.isTrue(Fx.close(fa.mean.get(i), wm.flatGet(i), 0.0000001));
@@ -74,13 +74,13 @@ public class ForecastEvalTest {
             i = i + 1;
         }
 
-        Series ma2 = Series.of(Fx.load("ts_ident_ma2"));
+        Series ma2 #= Series.of(Fx.load("ts_ident_ma2"));
         Arima mm = heap Arima((int64) 0, (int64) 0, (int64) 2);
         mm.setTrend("n");
         mm.fit(ma2);
-        ForecastResult fm = mm.forecastInterval((int64) 10, 0.05);
-        Tensor<float64> mfc = Fx.load("ts_arima_ma2_fc");
-        Tensor<float64> mci = Fx.load("ts_arima_ma2_fc_ci");
+        ForecastResult fm #= mm.forecastInterval((int64) 10, 0.05);
+        Tensor<float64> mfc #= Fx.load("ts_arima_ma2_fc");
+        Tensor<float64> mci #= Fx.load("ts_arima_ma2_fc_ci");
         i = 0;
         while (i < 10) {
             Assert.isTrue(Fx.close(fm.mean.get(i), mfc.flatGet(i), 0.02));
@@ -101,8 +101,8 @@ public class ForecastEvalTest {
     // surface has no shuffle to reach for.
     @Test
     public void chronologicalSplitOnly() {
-        Series s = Series.of(Fx.load("ts_ident_ar2"));
-        TrainTest tt = Split.chronological(s, 0.25);
+        Series s #= Series.of(Fx.load("ts_ident_ar2"));
+        TrainTest tt #= Split.chronological(s, 0.25);
         Assert.equals(tt.train.count() + tt.test.count(), s.count());
         Assert.equals(tt.train.count(), (int64) 750);
         // Strictly earlier: the last training index precedes the first
@@ -115,7 +115,7 @@ public class ForecastEvalTest {
 
         boolean threw = false;
         try {
-            TrainTest bad = Split.chronological(s, 1.5);
+            TrainTest bad #= Split.chronological(s, 1.5);
         } catch (TsException ex) { threw = true; }
         Assert.isTrue(threw);
         return;
@@ -127,20 +127,20 @@ public class ForecastEvalTest {
     // future observation reaching any fit fails this.
     @Test
     public void rollingOriginNeverLeaks() {
-        Tensor<float64> base = Fx.load("ts_stat_wn");
+        Tensor<float64> base #= Fx.load("ts_stat_wn");
         int64 n = base.shapeAt(0);
         float64[] b = heap float64[n];
         int64 i = 0;
         while (i < n) { b[i] = base.flatGet(i); i = i + 1; }
         b[n - 1] = b[n - 1] + 1000.0;               // tamper with the future
         int64[] sh = heap int64[1]; sh[0] = n;
-        Series sa = Series.of(base);
-        Series sb = Series.of(Tensor.of<float64>(b, sh));
+        Series sa #= Series.of(base);
+        Series sb #= Series.of(Tensor.of<float64>(b, sh));
 
         AutoReg f1 = heap AutoReg((int64) 1);
-        BacktestResult ra = Backtest.run(f1, sa, (int64) 150, (int64) 1);
+        BacktestResult ra #= Backtest.run(f1, sa, (int64) 150, (int64) 1);
         AutoReg f2 = heap AutoReg((int64) 1);
-        BacktestResult rb = Backtest.run(f2, sb, (int64) 150, (int64) 1);
+        BacktestResult rb #= Backtest.run(f2, sb, (int64) 150, (int64) 1);
         Assert.equals(ra.count(), rb.count());
         i = 0;
         while (i < ra.count()) {
@@ -159,9 +159,9 @@ public class ForecastEvalTest {
     // is asserted by value identity), and MAPE's zero policy is loud.
     @Test
     public void metricsReuseAndMapePolicy() {
-        Series ar2 = Series.of(Fx.load("ts_ident_ar2"));
+        Series ar2 #= Series.of(Fx.load("ts_ident_ar2"));
         AutoReg f = heap AutoReg((int64) 2);
-        BacktestResult r = Backtest.run(f, ar2, (int64) 950, (int64) 1);
+        BacktestResult r #= Backtest.run(f, ar2, (int64) 950, (int64) 1);
         // rmse² == mse (the ml.Metrics contract).
         Assert.isTrue(Fx.close(r.rmse() * r.rmse(), r.mse(), 0.0000000001));
         Assert.isTrue(r.mae() > 0.0);
@@ -172,9 +172,9 @@ public class ForecastEvalTest {
         int64 i = 0;
         while (i < 20) { a[i] = (float64) (i % 7) - 3.0; i = i + 1; }
         int64[] sh = heap int64[1]; sh[0] = 20;
-        Series zs = Series.of(Tensor.of<float64>(a, sh));
+        Series zs #= Series.of(Tensor.of<float64>(a, sh));
         MovingAverageForecaster mf = heap MovingAverageForecaster((int64) 3);
-        BacktestResult rz = Backtest.run(mf, zs, (int64) 10, (int64) 1);
+        BacktestResult rz #= Backtest.run(mf, zs, (int64) 10, (int64) 1);
         float64 mae = rz.mae();
         boolean threw = false;
         try {
@@ -188,11 +188,11 @@ public class ForecastEvalTest {
     // structure, and the comparison is REPORTED (both numbers surface).
     @Test
     public void modelBeatsBaseline() {
-        Series ar2 = Series.of(Fx.load("ts_ident_ar2"));
+        Series ar2 #= Series.of(Fx.load("ts_ident_ar2"));
         AutoReg model = heap AutoReg((int64) 2);
-        BacktestResult rm = Backtest.run(model, ar2, (int64) 900, (int64) 1);
+        BacktestResult rm #= Backtest.run(model, ar2, (int64) 900, (int64) 1);
         MovingAverageForecaster base = heap MovingAverageForecaster((int64) 5);
-        BacktestResult rb = Backtest.run(base, ar2, (int64) 900, (int64) 1);
+        BacktestResult rb #= Backtest.run(base, ar2, (int64) 900, (int64) 1);
         System.stdout.println("baseline-vs-model rmse: baseline="
             + rb.rmse() + " AutoReg(2)=" + rm.rmse());
         Assert.isTrue(rm.rmse() < rb.rmse());
@@ -203,11 +203,11 @@ public class ForecastEvalTest {
     // persistent series, and the horizon is explicit at the call site.
     @Test
     public void horizonDegrades() {
-        Series s = Series.of(Fx.load("ts_arima111_series"));
+        Series s #= Series.of(Fx.load("ts_arima111_series"));
         MovingAverageForecaster f1 = heap MovingAverageForecaster((int64) 3);
-        BacktestResult h1 = Backtest.run(f1, s, (int64) 950, (int64) 1);
+        BacktestResult h1 #= Backtest.run(f1, s, (int64) 950, (int64) 1);
         MovingAverageForecaster f5 = heap MovingAverageForecaster((int64) 3);
-        BacktestResult h5 = Backtest.run(f5, s, (int64) 950, (int64) 5);
+        BacktestResult h5 #= Backtest.run(f5, s, (int64) 950, (int64) 5);
         Assert.isTrue(h5.rmse() > h1.rmse());
         Assert.equals(h1.horizon(), (int64) 1);
         Assert.equals(h5.horizon(), (int64) 5);
