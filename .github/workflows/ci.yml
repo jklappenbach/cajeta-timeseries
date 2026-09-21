@@ -32,12 +32,23 @@ permissions:
 env:
   # Must match a release tag of jklappenbach/cajeta.
   #
-  # v0.17.4 is the floor for this library: it is the first release whose
+  # v0.17.4 was the floor for this library: it is the first release whose
   # stdlib carries BOTH cajeta.math.optim (L-BFGS/Nelder-Mead — the MA/ARMA
   # likelihood path is estimated through it, stdlib-completion U5) at a
   # deterministic-compilation baseline AND the current cajeta.math surface
   # (fft for §6.5 autocovariance, stats for test p-values). Do not pin back.
-  CAJETA_VERSION: v0.17.4
+  #
+  # v0.29.0 raises that floor, and the dependency graph forces it rather than
+  # this library's own sources. A consumer's compiler re-checks a dependency
+  # archive's OWN sources, and under v0.29.0 both old pegs are rejected there:
+  # dev.cajeta.unit 0.2.0 on a PredMatcher keeping a plain `pred` parameter in
+  # a field, dev.cajeta.ml 0.10.0 on a plain Tensor parameter `x` kept in a
+  # field. Each error names a symbol cajeta-timeseries does not contain. The
+  # pegs therefore move to unit 0.3.0 and ml 0.10.2, and v0.17.4 cannot consume
+  # those: ml 0.10.2 reads `cajeta.codec.json.JsonValue.object`, which the
+  # v0.17.4 stdlib does not have. Measured both directions rather than assumed
+  # — src/main/cajeta itself compiles unchanged on v0.17.4 and on v0.29.0.
+  CAJETA_VERSION: v0.29.0
 
 jobs:
   build-test:

@@ -19,7 +19,7 @@
 
     "details": {
         "name":               "dev.cajeta.timeseries",
-        "version":            "0.1.1",
+        "version":            "0.1.2",
         "description":        "cajeta-timeseries — classical time series: decomposition, stationarity, correlograms, and the ARIMA family with lookahead-proof evaluation",
         "license":            "Apache-2.0",
         "authors":            ["Julian Klappenbach"],
@@ -34,15 +34,26 @@
         // Predictor protocol where it genuinely fits (spec §8.9). The core
         // stdlib (cajeta.math incl. linalg/fft/stats/optim, cajeta.nucleo)
         // is built into the toolchain — not declared.
+        //
+        // 0.10.2 is a REQUIRED floor, not a courtesy raise. A consumer's
+        // compiler re-checks a dependency archive's OWN sources, and 0.10.0
+        // keeps a plain Tensor parameter `x` in a field, which the
+        // captured-borrow check rejects. The build refuses naming `x`, a
+        // symbol this library does not contain.
         "dependencies": {
-            "dev.cajeta.ml": "0.10.0"
+            "dev.cajeta.ml": "0.10.2"
         },
 
         // The suite is driven by cajeta-unit's reflective @Test discovery;
         // run-tests.sh resolves the archive (sibling checkout, then store,
         // then a sha256-verified Olla fetch at this pin).
+        //
+        // 0.3.0 is a REQUIRED floor for the same reason: 0.2.0 carries a
+        // PredMatcher keeping a plain function parameter `pred` in a field,
+        // so the test binary refuses to link naming `pred`. 0.3.0 takes the
+        // predicate owned.
         "dev-dependencies": {
-            "dev.cajeta.unit": "0.2.0"
+            "dev.cajeta.unit": "0.3.0"
         },
 
         "repositories": [
