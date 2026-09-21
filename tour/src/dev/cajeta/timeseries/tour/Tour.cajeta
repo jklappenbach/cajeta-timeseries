@@ -38,8 +38,8 @@ public final class Tour {
         float64[] a = heap float64[5];
         a[0] = 1.0; a[1] = 2.0; a[2] = 3.0; a[3] = 4.0; a[4] = 5.0;
         int64[] sh = heap int64[1]; sh[0] = 5;
-        Series s = Series.of(Tensor.of<float64>(a, sh));
-        Series l = s.lag((int64) 1);
+        Series s #= Series.of(Tensor.of<float64>(a, sh));
+        Series l #= s.lag((int64) 1);
         Tour.check(l.isMissing((int64) 0), "lag(1) marks the head missing, not zero");
         Tour.check(l.get((int64) 1) == 1.0, "lag(1) aligns y(t-1) under t");
         Tour.check(l.dropMissing().count() == (int64) 4,
@@ -63,8 +63,8 @@ public final class Tour {
             i = i + 1;
         }
         int64[] sh = heap int64[1]; sh[0] = n;
-        Series s = Series.of(Tensor.of<float64>(a, sh));
-        Decomposition d = Decompose.additive(s, (int64) 12);
+        Series s #= Series.of(Tensor.of<float64>(a, sh));
+        Decomposition d #= Decompose.additive(s, (int64) 12);
         boolean ok = true;
         i = 0;
         while (i < n) {
@@ -85,12 +85,12 @@ public final class Tour {
     /** Passage 3 — stationarity verdicts read the right way round. */
     static void stationarityPassage() {
         System.stdout.println("passage: ADF vs KPSS");
-        Series rw = Diagnostics.randomWalk((uint64) 5, (int64) 250);
-        AdfResult a = Adf.test(rw);
+        Series rw #= Diagnostics.randomWalk((uint64) 5, (int64) 250);
+        AdfResult a #= Adf.test(rw);
         Tour.check(!a.isStationary(0.05),
             "a random walk keeps its unit root (ADF fails to reject)");
-        Series d = rw.diff();
-        AdfResult a2 = Adf.test(d);
+        Series d #= rw.diff();
+        AdfResult a2 #= Adf.test(d);
         Tour.check(a2.isStationary(0.05),
             "one difference of a random walk is stationary");
         Tour.check(a.nullHypothesis().contains("UNIT ROOT"),
@@ -109,13 +109,13 @@ public final class Tour {
             i = i + 1;
         }
         int64[] sh = heap int64[1]; sh[0] = n;
-        Series s = Series.of(Tensor.of<float64>(a, sh));
-        TrainTest tt = Split.chronological(s, 0.2);
+        Series s #= Series.of(Tensor.of<float64>(a, sh));
+        TrainTest tt #= Split.chronological(s, 0.2);
         Tour.check(tt.train.indexAt(tt.train.count() - 1)
             < tt.test.indexAt((int64) 0),
             "the only split is chronological: train strictly precedes test");
         MovingAverageForecaster f = heap MovingAverageForecaster((int64) 4);
-        BacktestResult r = Backtest.run(f, s, (int64) 40, (int64) 1);
+        BacktestResult r #= Backtest.run(f, s, (int64) 40, (int64) 1);
         Tour.check(r.rmse() < 1.0,
             "rolling-origin backtest scores the baseline honestly");
         return;
