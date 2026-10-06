@@ -11,7 +11,7 @@ import cajeta.lang.String;
  */
 public class TsException extends RecoverableException {
     public TsException(String message) {
-        this.message = message;
+        this.message #= message;
         this.cause = 0;
     }
 }

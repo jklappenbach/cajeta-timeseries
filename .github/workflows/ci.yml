@@ -48,7 +48,8 @@ env:
   # those: ml 0.10.2 reads `cajeta.codec.json.JsonValue.object`, which the
   # v0.17.4 stdlib does not have. Measured both directions rather than assumed
   # — src/main/cajeta itself compiles unchanged on v0.17.4 and on v0.29.0.
-  CAJETA_VERSION: v0.29.0
+  # v0.35.0 enforces the field-store rule, so the pegs move to ml 0.10.3 and unit 0.3.3.
+  CAJETA_VERSION: v0.35.0
 
 jobs:
   build-test:

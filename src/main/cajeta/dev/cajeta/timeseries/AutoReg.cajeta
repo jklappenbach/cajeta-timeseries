@@ -76,14 +76,13 @@ public final class AutoReg implements Forecaster {
 
     /** Trend: `"n"`, `"c"`, or `"ct"` (§8.3). Call before fit. */
     public void setTrend(String trend) {
-        if (trend.equals("n")) { this.ktrend = 0; }
-        else if (trend.equals("c")) { this.ktrend = 1; }
-        else if (trend.equals("ct")) { this.ktrend = 2; }
+        if (trend.equals("n")) { this.ktrend = 0; this.trend = "n"; }
+        else if (trend.equals("c")) { this.ktrend = 1; this.trend = "c"; }
+        else if (trend.equals("ct")) { this.ktrend = 2; this.trend = "ct"; }
         else {
             throw heap TsException("AutoReg: trend must be \"n\", \"c\", or "
                 + "\"ct\" (got \"" + trend + "\")");
         }
-        this.trend = trend;
         return;
     }
 
