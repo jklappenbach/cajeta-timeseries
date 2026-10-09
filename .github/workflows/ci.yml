@@ -50,7 +50,8 @@ env:
   # — src/main/cajeta itself compiles unchanged on v0.17.4 and on v0.29.0.
   # v0.35.0 enforces the field-store rule, so the pegs move to ml 0.10.3 and unit 0.3.3.
   # v0.36.0 moves the pegs to ml 0.10.4 and unit 0.3.4.
-  CAJETA_VERSION: v0.36.0
+  # v0.38.0 moves the pegs to ml 0.10.5 and unit 0.3.5.
+  CAJETA_VERSION: v0.38.0
 
 jobs:
   build-test:
